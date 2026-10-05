@@ -1,0 +1,16 @@
+{
+  "name": "Learn Hive - Online Exam & Learning Portal",
+  "short_name": "Learn Hive",
+  "description": "Master your exams with model tests, live batch ranking and smart practice.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0A0A0E",
+  "theme_color": "#00F0FF",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/x-icon"
+    }
+  ]
+}
