@@ -39,9 +39,8 @@ export function useExamLogic(id: string) {
   const [hideSolutionUntilLiveEnds, setHideSolutionUntilLiveEnds] = useState<boolean>(paramHideSolution);
 
   const isSubmittingRef = useRef(false);
-  const examStartTimeRef = useRef<number>(Date.now()); // 🔥 Anti-Cheat Timer
+  const examStartTimeRef = useRef<number>(Date.now());
 
-  // Anti-Cheat Events
   useEffect(() => {
     if (!submitted) {
       const cleanup = enableExamAntiCheat();
@@ -49,7 +48,6 @@ export function useExamLogic(id: string) {
     }
   }, [submitted]);
 
-  // Load Bookmarks
   useEffect(() => {
     if (typeof window !== "undefined") {
       const stored = localStorage.getItem("mcqhub_saved_questions_detail");
@@ -64,7 +62,6 @@ export function useExamLogic(id: string) {
     }
   }, []);
 
-  // Fetch Exam Data
   useEffect(() => {
     async function fetchExam() {
       setLoading(true);
@@ -76,7 +73,7 @@ export function useExamLogic(id: string) {
             const list: Question[] = JSON.parse(stored);
             setQuestions(list);
             setTimeLeft(list.length * 60);
-            examStartTimeRef.current = Date.now(); // Start timer tracking
+            examStartTimeRef.current = Date.now();
           }
           setLoading(false);
           return;
@@ -122,7 +119,7 @@ export function useExamLogic(id: string) {
           if (queryLimit > 0 && queryLimit < loadedQuestions.length) loadedQuestions = loadedQuestions.slice(0, queryLimit);
           setQuestions(loadedQuestions);
 
-          examStartTimeRef.current = Date.now(); // Start timer tracking
+          examStartTimeRef.current = Date.now();
 
           if (typeof window !== "undefined") {
             const savedEnd = localStorage.getItem(`mcq_active_end_${decodedId}`);
@@ -146,7 +143,6 @@ export function useExamLogic(id: string) {
     if (id) fetchExam();
   }, [id]);
 
-  // Timer Engine
   useEffect(() => {
     if (loading || submitted || questions.length === 0) return;
     const timer = setInterval(() => {
@@ -176,7 +172,7 @@ export function useExamLogic(id: string) {
       const pos = q.customPositiveMark ?? queryPos;
       const neg = q.customNegativeMark ?? queryNeg;
       const correctAnswers = q.correctOptionIndices?.length > 0 ? q.correctOptionIndices : q.correctOptionIndex !== -1 ? [q.correctOptionIndex] : [];
-      const isBonus = q.options.length > 0 && correctAnswers.length === 0;
+      const isBonus = (q.options || []).length > 0 && correctAnswers.length === 0;
 
       if (isBonus) { correct++; totalScore += pos; } 
       else if (selected !== undefined) {
@@ -190,11 +186,10 @@ export function useExamLogic(id: string) {
   const handleSubmitExam = useCallback(() => {
     if (isSubmittingRef.current) return;
 
-    // 🔥 Server & Client Unified Anti-Cheat Logic (Pro-Tip Applied)
     const timeSpentMs = Date.now() - examStartTimeRef.current;
     const answeredCount = Object.keys(answers).length;
     const totalDurationMs = queryDuration > 0 ? queryDuration * 60 * 1000 : questions.length * 60 * 1000;
-    const isJustStarted = (timeLeft * 1000) >= totalDurationMs - 10000; // Only blocks if done in first 10 seconds
+    const isJustStarted = (timeLeft * 1000) >= totalDurationMs - 10000;
 
     if (isJustStarted && answeredCount >= 5 && timeSpentMs < 5000) {
       alert("⚠️ Security Alert: অস্বাভাবিক গতি সনাক্ত হয়েছে! পরীক্ষাটি বাতিল করা হলো।");
@@ -211,15 +206,24 @@ export function useExamLogic(id: string) {
       localStorage.removeItem(`mcq_active_answers_${decodedId}`);
       const res = calculateFinalScore();
 
+      // গ্লোবাল এক্সপি হিসাব (+১ প্রতি সঠিক, -০.২৫ প্রতি ভুল)
+      const globalXP = (res.correct * 1.0) - (res.wrong * 0.25);
+
       saveExamHistory({
         examId: decodedId, examTitle, score: res.score, totalQuestions: res.total,
         correctAnswers: res.correct, wrongAnswers: res.wrong, skippedAnswers: res.skipped, timestamp: Date.now(),
       });
       syncUserGlobalScore(res.score);
       recordDailyActivity();
-      if (res.total > 0 && res.score / res.total >= 0.5) sounds.playCelebrate();
 
-      sessionStorage.setItem(`mcqhub_review_${id}`, JSON.stringify({ questions, answers, ...res, liveEndTime, hideSolutionUntilLiveEnds }));
+      const reviewPayload = { questions, answers, ...res, globalXP, liveEndTime, hideSolutionUntilLiveEnds };
+      sessionStorage.setItem(`mcqhub_review_${id}`, JSON.stringify(reviewPayload));
+      localStorage.setItem(`mcqhub_persisted_review_${decodedId}`, JSON.stringify(reviewPayload));
+
+      // 🔥 অ্যান্ড্রয়েডের মতো সরাসরি আলাদা রেজাল্ট পেজে রিডাইরেক্ট!
+      router.replace(
+        `/result?id=${encodeURIComponent(id)}&title=${encodeURIComponent(examTitle)}&score=${res.score.toFixed(2)}&correct=${res.correct}&wrong=${res.wrong}&skipped=${res.skipped}&total=${res.total}&xp=${globalXP.toFixed(2)}`
+      );
     }
   }, [id, examTitle, questions, answers, liveEndTime, hideSolutionUntilLiveEnds, calculateFinalScore, timeLeft, queryDuration, router]);
 

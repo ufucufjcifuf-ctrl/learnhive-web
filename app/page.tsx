@@ -79,7 +79,6 @@ export default function HomePage() {
 
         {/* কলাম ২: সেন্ট্রাল স্টেজ (Smart Matrix ক্যানভাস) */}
         <main className="w-full lg:max-w-[750px] min-h-screen flex flex-col pb-24 lg:pb-8">
-          {/* সার্চ বার */}
           <div className="relative mb-6">
             <Search size={18} className="absolute left-4 top-3.5 text-gray-400" />
             <input
@@ -93,10 +92,10 @@ export default function HomePage() {
 
           {loading ? (
             <div className="flex flex-col gap-4 animate-pulse">
-              <div className="h-44 bg-white/5 rounded-3xl w-full"></div>
+              <div className="h-44 bg-white/5 rounded-3xl w-full" />
               <div className="grid grid-cols-2 gap-4">
-                <div className="h-32 bg-white/5 rounded-2xl"></div>
-                <div className="h-32 bg-white/5 rounded-2xl"></div>
+                <div className="h-32 bg-white/5 rounded-2xl" />
+                <div className="h-32 bg-white/5 rounded-2xl" />
               </div>
             </div>
           ) : filteredItems.length > 0 ? (
@@ -109,7 +108,7 @@ export default function HomePage() {
           )}
         </main>
 
-        {/* কলাম ৩: ডান পাশের উইজেট প্যানেল (Desktop Only) */}
+        {/* কলাম ৩: ডান পাশের প্যানেল (Desktop Only) */}
         <aside className="hidden xl:flex flex-col w-[300px] sticky top-20 h-[calc(100vh-100px)] gap-6">
           <div className="bg-[#121218] border border-white/5 rounded-3xl p-5 shadow-xl">
             <h3 className="font-bold text-sm text-cyan-400 flex items-center gap-2 mb-3">
@@ -125,49 +124,9 @@ export default function HomePage() {
               ব্যাচ এক্সাম হাব খুলুন →
             </Link>
           </div>
-
-          <div className="bg-[#121218] border border-white/5 rounded-3xl p-5 shadow-xl flex-1 flex flex-col">
-            <h3 className="font-bold text-sm text-amber-400 flex items-center gap-2 mb-4">
-              <Award size={16} /> গ্লোবাল র‍্যাঙ্কিং
-            </h3>
-            <div className="flex flex-col gap-3 text-xs">
-              {["সাকিব আল হাসান", "তানজিদ তামিম", "মেহেদী হাসান"].map((name, i) => (
-                <div key={i} className="flex items-center justify-between p-2 rounded-xl bg-white/5 border border-white/5">
-                  <div className="flex items-center gap-2">
-                    <span className="font-black text-cyan-400">#{i + 1}</span>
-                    <span className="font-semibold text-gray-200">{name}</span>
-                  </div>
-                  <span className="text-[10px] text-emerald-400 font-bold">১০০% স্কোর</span>
-                </div>
-              ))}
-            </div>
-            <Link href="/leaderboard" className="mt-auto text-center text-xs font-bold text-gray-400 hover:text-white pt-4">
-              সম্পূর্ণ মেধা তালিকা দেখুন →
-            </Link>
-          </div>
         </aside>
 
       </div>
-
-      {/* মোবাইল বটম বার */}
-      <nav className="lg:hidden fixed bottom-0 left-0 right-0 h-16 bg-[#121218]/95 backdrop-blur-md border-t border-white/10 flex justify-around items-center px-4 z-50">
-        <Link href="/" className="flex flex-col items-center gap-1 text-cyan-400">
-          <Home size={18} />
-          <span className="text-[10px] font-bold">হোম</span>
-        </Link>
-        <Link href="/live" className="flex flex-col items-center gap-1 text-gray-400 hover:text-white">
-          <Flame size={18} />
-          <span className="text-[10px] font-bold">লাইভ</span>
-        </Link>
-        <Link href="/custom-exam" className="flex flex-col items-center gap-1 text-gray-400 hover:text-white">
-          <Sliders size={18} />
-          <span className="text-[10px] font-bold">কাস্টম</span>
-        </Link>
-        <Link href="/mistakes" className="flex flex-col items-center gap-1 text-gray-400 hover:text-white">
-          <BookOpen size={18} />
-          <span className="text-[10px] font-bold">মিসটেক</span>
-        </Link>
-      </nav>
     </div>
   );
 }

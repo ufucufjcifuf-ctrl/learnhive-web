@@ -18,22 +18,34 @@ export const DynamicCard: React.FC<{ item: DashboardItem }> = ({ item }) => {
   const bgConfig = design?.background || item.uiStyle?.background;
   const textConf = item.uiStyle?.textConfig;
 
-  // ইমেজ লিংক রিজলভ করা (গিটহাব লিংক বা অ্যাসেট নাম)
   useEffect(() => {
     let url = getSmartImageUrl(item.iconUrl);
     if (url) {
       setResolvedImageUrl(url);
     } else if (item.iconUrl && !item.iconUrl.startsWith("http")) {
-      // 🔥 map: Record<string, string> টাইপ দিয়ে টাইপস্ক্রিপ্ট এরর ফিক্স করা হলো
-      syncAssetImages().then((map: Record<string, string>) => {
+      syncAssetImages().then((map) => {
         const freshUrl = map[item.iconUrl!.trim().toLowerCase()];
         if (freshUrl) setResolvedImageUrl(freshUrl);
       });
     }
   }, [item.iconUrl]);
 
-  // ব্যাকগ্রাউন্ড স্টাইল
   const getCardStyle = (): React.CSSProperties => {
+    const radius = design?.cornerRadius ?? 16;
+    let borderRadius = `${radius}px`;
+
+    if (design?.shapeType === "CIRCLE") borderRadius = "9999px";
+    else if (design?.shapeType === "LEAF") borderRadius = `${radius}px 0px ${radius}px 0px`;
+    else if (design?.shapeType === "CAPSULE") borderRadius = "50px";
+
+    // ছবি থাকলে ব্যাকগ্রাউন্ড একদম ট্রান্সপারেন্ট থাকবে যাতে কোনো রং উপচে না পড়ে
+    if (resolvedImageUrl) {
+      return {
+        borderRadius,
+        background: "transparent",
+      };
+    }
+
     let background = "linear-gradient(135deg, #1E1E24 0%, #121216 100%)";
 
     if (bgConfig && bgConfig.colors && bgConfig.colors.length > 0 && bgConfig.colors[0] !== "#00000000") {
@@ -51,13 +63,6 @@ export const DynamicCard: React.FC<{ item: DashboardItem }> = ({ item }) => {
       const end = item.gradientEndColor || "#000000";
       background = `linear-gradient(135deg, ${start} 0%, ${end} 100%)`;
     }
-
-    const radius = design?.cornerRadius ?? 16;
-    let borderRadius = `${radius}px`;
-
-    if (design?.shapeType === "CIRCLE") borderRadius = "9999px";
-    else if (design?.shapeType === "LEAF") borderRadius = `${radius}px 0px ${radius}px 0px`;
-    else if (design?.shapeType === "CAPSULE") borderRadius = "50px";
 
     return {
       background,
@@ -96,7 +101,7 @@ export const DynamicCard: React.FC<{ item: DashboardItem }> = ({ item }) => {
       setShowModal(true);
     } else if (item.type === "FOLDER" || item.type.includes("SECTION")) {
       if (item.embeddedItems && item.embeddedItems.length > 0) {
-        cacheEmbeddedTree(item.embeddedItems);
+        cacheEmbeddedTree([item]);
       }
       router.push(`/folder/${encodeURIComponent(rawCmd)}?title=${encodeURIComponent(item.title)}`);
     } else if (item.type === "NOTE_PDF" || item.type === "NOTE_SHEET") {
@@ -124,15 +129,14 @@ export const DynamicCard: React.FC<{ item: DashboardItem }> = ({ item }) => {
         style={getCardStyle()}
         className="group relative w-full h-full overflow-hidden cursor-pointer shadow-lg hover:shadow-cyan-500/20 hover:scale-[1.02] transition-all duration-200"
       >
-        {/* ছবি থাকলে হুবহু অ্যান্ড্রয়েড অ্যাপের মতো কার্ড জুড়ে ছবি লোড হবে */}
+        {/* 🔥 object-fill ব্যবহার করা হয়েছে যাতে অ্যান্ড্রয়েডের FillBounds এর মতো ছবি একদম না কেটে পুরো ফ্রেমে বসে */}
         {resolvedImageUrl ? (
           <img
             src={resolvedImageUrl}
             alt={item.title}
-            className="w-full h-full object-cover rounded-[inherit] block pointer-events-none select-none"
+            className="w-full h-full object-fill rounded-[inherit] block pointer-events-none select-none"
           />
         ) : (
-          /* ছবি না থাকলে মাঝখানে টাইটেল টেক্সট দেখাবে */
           <div className={`w-full h-full p-4 flex items-center justify-center ${titleAlign}`}>
             <h3 style={{ color: titleColor }} className="font-bold text-sm md:text-base leading-snug line-clamp-2 drop-shadow">
               <MathText text={item.title} />
@@ -150,7 +154,7 @@ export const DynamicCard: React.FC<{ item: DashboardItem }> = ({ item }) => {
           </span>
         )}
 
-        {/* লাইভ বা প্রিমিয়াম স্ট্যাটাস */}
+        {/* লাইভ বা প্রিমিয়াম আইকন */}
         {isLive ? (
           <span className="absolute top-2 left-2 bg-red-600 text-white text-[9px] font-black px-2 py-0.5 rounded-full flex items-center gap-1 animate-pulse shadow-md z-10">
             <Radio size={10} /> LIVE

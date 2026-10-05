@@ -3,7 +3,6 @@
 import React from "react";
 import Link from "next/link";
 import { useAuth } from "@/lib/useAuth";
-import { signInWithGoogle } from "@/lib/authService";
 import { Search, Sparkles, User as UserIcon } from "lucide-react";
 
 export const Navbar: React.FC = () => {
@@ -25,7 +24,6 @@ export const Navbar: React.FC = () => {
 
       {/* অ্যাকশন বাটন সমূহ */}
       <div className="flex items-center gap-2 md:gap-3">
-        {/* সার্চ বাটন */}
         <Link
           href="/search"
           className="flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-gray-400 hover:text-white px-3 py-1.5 rounded-xl text-xs transition"
@@ -35,7 +33,6 @@ export const Navbar: React.FC = () => {
           <span className="hidden sm:inline">খুঁজুন...</span>
         </Link>
 
-        {/* প্রো ব্যাজ / আপগ্রেড বাটন */}
         <Link
           href="/premium"
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black transition border ${
@@ -48,9 +45,8 @@ export const Navbar: React.FC = () => {
           {isPro ? "PRO USER" : "PRO নিন"}
         </Link>
 
-        {/* ইউজার প্রোফাইল বাটন */}
         {loading ? (
-          <div className="w-8 h-8 rounded-xl bg-white/5 animate-pulse"></div>
+          <div className="w-8 h-8 rounded-xl bg-white/5 animate-pulse" />
         ) : profile ? (
           <Link href="/profile" className="flex items-center gap-2 p-1 rounded-xl bg-white/5 border border-white/10 hover:border-cyan-500/40 transition">
             {profile.photoUrl ? (
@@ -62,13 +58,14 @@ export const Navbar: React.FC = () => {
             )}
           </Link>
         ) : (
-          <button
-            onClick={() => signInWithGoogle()}
+          /* 🔥 সরাসরি /login পেজে নিয়ে যাবে */
+          <Link
+            href="/login"
             className="flex items-center gap-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-bold text-xs px-3.5 py-1.5 rounded-xl transition"
           >
             <UserIcon size={14} className="text-cyan-400" />
             <span>লগইন</span>
-          </button>
+          </Link>
         )}
       </div>
 

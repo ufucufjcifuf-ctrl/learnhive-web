@@ -4,6 +4,7 @@ import "./globals.css";
 import "katex/dist/katex.min.css";
 import { NetworkBanner } from "@/components/NetworkBanner";
 import { PWAInstallPrompt } from "@/components/PWAInstallPrompt";
+import { BottomNavBar } from "@/components/BottomNavBar";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -30,14 +31,6 @@ export const metadata: Metadata = {
     icon: "/favicon.ico",
     apple: "/favicon.ico",
   },
-  openGraph: {
-    title: "Learn Hive - Master Your Exams",
-    description: "অনলাইন মডেল টেস্ট ও লাইভ ব্যাচ পরীক্ষা দিন সম্পূর্ণ ফ্রিতে।",
-    url: "https://learnhive.vercel.app",
-    siteName: "Learn Hive",
-    locale: "bn_BD",
-    type: "website",
-  },
 };
 
 export default function RootLayout({
@@ -51,12 +44,10 @@ export default function RootLayout({
         <link rel="manifest" href="/manifest.json" />
       </head>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased bg-[#0A0A0E] text-white selection:bg-cyan-500 selection:text-black`}>
-        {/* গ্লোবাল অনলাইন/অফলাইন নেটওয়ার্ক ব্যানার */}
         <NetworkBanner />
-        
         {children}
-
-        {/* PWA ইনস্টল প্রম্পট */}
+        {/* 🔥 অ্যান্ড্রয়েডের মতো গ্লোবাল বটম বার */}
+        <BottomNavBar />
         <PWAInstallPrompt />
       </body>
     </html>
