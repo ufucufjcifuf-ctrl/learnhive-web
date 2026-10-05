@@ -1,31 +1,42 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { DashboardItem } from "@/types";
 import { MathText } from "@/components/MathText";
-import { Lock, Play, FileText, Folder, Video, Radio } from "lucide-react";
+import { Lock, Radio } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { cacheEmbeddedTree } from "@/lib/layoutService";
 import { ExamActionModal } from "@/components/ExamActionModal";
+import { getSmartImageUrl, syncAssetImages } from "@/lib/imageService";
 
 export const DynamicCard: React.FC<{ item: DashboardItem }> = ({ item }) => {
   const router = useRouter();
   const [showModal, setShowModal] = useState(false);
+  const [resolvedImageUrl, setResolvedImageUrl] = useState<string | null>(null);
 
   const design = item.cardDesign;
   const bgConfig = design?.background || item.uiStyle?.background;
   const textConf = item.uiStyle?.textConfig;
 
-  // অ্যান্ড্রয়েড অ্যাপের নিখুঁত কালার ও ইমেজ ইঞ্জিন
+  // ইমেজ লিংক রিজলভ করা (গিটহাব লিংক বা অ্যাসেট নাম)
+  useEffect(() => {
+    let url = getSmartImageUrl(item.iconUrl);
+    if (url) {
+      setResolvedImageUrl(url);
+    } else if (item.iconUrl && !item.iconUrl.startsWith("http")) {
+      // 🔥 map: Record<string, string> টাইপ দিয়ে টাইপস্ক্রিপ্ট এরর ফিক্স করা হলো
+      syncAssetImages().then((map: Record<string, string>) => {
+        const freshUrl = map[item.iconUrl!.trim().toLowerCase()];
+        if (freshUrl) setResolvedImageUrl(freshUrl);
+      });
+    }
+  }, [item.iconUrl]);
+
+  // ব্যাকগ্রাউন্ড স্টাইল
   const getCardStyle = (): React.CSSProperties => {
     let background = "linear-gradient(135deg, #1E1E24 0%, #121216 100%)";
 
-    // ১. গিটহাব বা বাহ্যিক ইমেজ সাপোর্ট
-    if (item.iconUrl && item.iconUrl.startsWith("http")) {
-      background = `linear-gradient(rgba(0,0,0,0.50), rgba(0,0,0,0.80)), url(${item.iconUrl})`;
-    } 
-    // ২. ভিজ্যুয়াল বিল্ডারের অ্যাডভান্সড গ্রেডিয়েন্ট
-    else if (bgConfig && bgConfig.colors && bgConfig.colors.length > 0 && bgConfig.colors[0] !== "#00000000") {
+    if (bgConfig && bgConfig.colors && bgConfig.colors.length > 0 && bgConfig.colors[0] !== "#00000000") {
       const colors = bgConfig.colors;
       if (bgConfig.type === "SOLID") {
         background = colors[0];
@@ -35,9 +46,7 @@ export const DynamicCard: React.FC<{ item: DashboardItem }> = ({ item }) => {
       } else if (bgConfig.type === "RADIAL_GRADIENT") {
         background = `radial-gradient(circle, ${colors.join(", ")})`;
       }
-    } 
-    // ৩. অ্যান্ড্রয়েডের styleColor এবং gradientEndColor ফলব্যাক
-    else if (item.styleColor && item.styleColor !== "#00F0FF") {
+    } else if (item.styleColor && item.styleColor !== "#00F0FF") {
       const start = item.styleColor;
       const end = item.gradientEndColor || "#000000";
       background = `linear-gradient(135deg, ${start} 0%, ${end} 100%)`;
@@ -52,15 +61,11 @@ export const DynamicCard: React.FC<{ item: DashboardItem }> = ({ item }) => {
 
     return {
       background,
-      backgroundSize: "cover",
-      backgroundPosition: "center",
-      backgroundRepeat: "no-repeat",
       borderRadius,
       border: "1px solid rgba(255, 255, 255, 0.12)",
     };
   };
 
-  // ক্লিক হ্যান্ডলার ও ইউনিভার্সাল লিঙ্ক প্রসেসিং
   const handleClick = () => {
     const actionUri = item.uiAction?.actionUri;
     if (actionUri) {
@@ -91,7 +96,7 @@ export const DynamicCard: React.FC<{ item: DashboardItem }> = ({ item }) => {
       setShowModal(true);
     } else if (item.type === "FOLDER" || item.type.includes("SECTION")) {
       if (item.embeddedItems && item.embeddedItems.length > 0) {
-        cacheEmbeddedTree([item]);
+        cacheEmbeddedTree(item.embeddedItems);
       }
       router.push(`/folder/${encodeURIComponent(rawCmd)}?title=${encodeURIComponent(item.title)}`);
     } else if (item.type === "NOTE_PDF" || item.type === "NOTE_SHEET") {
@@ -109,7 +114,6 @@ export const DynamicCard: React.FC<{ item: DashboardItem }> = ({ item }) => {
     Date.now() >= item.examConfig.startTimeMs &&
     Date.now() <= item.examConfig.liveEndTimeMs;
 
-  // টেক্সট স্টাইল ও কালার
   const titleColor = textConf?.textColor && textConf.textColor !== "#FFFFFF" ? textConf.textColor : "#FFFFFF";
   const titleAlign = textConf?.textAlign === "START" ? "text-left" : textConf?.textAlign === "END" ? "text-right" : "text-center";
 
@@ -118,72 +122,44 @@ export const DynamicCard: React.FC<{ item: DashboardItem }> = ({ item }) => {
       <div
         onClick={handleClick}
         style={getCardStyle()}
-        className="group relative w-full h-full p-4 flex flex-col justify-between overflow-hidden cursor-pointer shadow-lg hover:shadow-cyan-500/20 hover:-translate-y-0.5 transition-all duration-200"
+        className="group relative w-full h-full overflow-hidden cursor-pointer shadow-lg hover:shadow-cyan-500/20 hover:scale-[1.02] transition-all duration-200"
       >
-        <div className="flex justify-between items-start w-full">
-          <div className="flex items-center gap-1.5">
-            {isLive ? (
-              <span className="bg-red-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full flex items-center gap-1 animate-pulse">
-                <Radio size={10} /> LIVE
-              </span>
-            ) : item.isPremium ? (
-              <span className="bg-amber-500/20 border border-amber-500 text-amber-400 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
-                <Lock size={10} /> PRO
-              </span>
-            ) : (
-              <span className="text-gray-300">
-                {item.type === "EXAM_FIREBASE" && <Play size={16} className="text-cyan-400" />}
-                {item.type === "FOLDER" && <Folder size={16} className="text-amber-400" />}
-                {item.type.startsWith("NOTE") && <FileText size={16} className="text-emerald-400" />}
-                {item.type === "VIDEO_YOUTUBE" && <Video size={16} className="text-red-400" />}
-                {item.type === "HTML_PAGE" && <FileText size={16} className="text-purple-400" />}
-              </span>
-            )}
-
-            {/* ব্যাজ শো করা */}
-            {(design?.showBadge ?? true) && item.badgeText && (
-              <span
-                style={{ backgroundColor: item.badgeColor || "#FF2E2E" }}
-                className="text-white text-[9px] font-black px-2 py-0.5 rounded-md uppercase"
-              >
-                {item.badgeText}
-              </span>
-            )}
+        {/* ছবি থাকলে হুবহু অ্যান্ড্রয়েড অ্যাপের মতো কার্ড জুড়ে ছবি লোড হবে */}
+        {resolvedImageUrl ? (
+          <img
+            src={resolvedImageUrl}
+            alt={item.title}
+            className="w-full h-full object-cover rounded-[inherit] block pointer-events-none select-none"
+          />
+        ) : (
+          /* ছবি না থাকলে মাঝখানে টাইটেল টেক্সট দেখাবে */
+          <div className={`w-full h-full p-4 flex items-center justify-center ${titleAlign}`}>
+            <h3 style={{ color: titleColor }} className="font-bold text-sm md:text-base leading-snug line-clamp-2 drop-shadow">
+              <MathText text={item.title} />
+            </h3>
           </div>
+        )}
 
-          {item.examConfig?.durationMinutes ? (
-            <span className="text-[11px] font-semibold text-gray-300 bg-black/50 px-2 py-0.5 rounded-md backdrop-blur-sm">
-              {item.examConfig.durationMinutes}m
-            </span>
-          ) : null}
-        </div>
-
-        <div className={`my-auto w-full ${titleAlign}`}>
-          <h3
-            style={{ color: titleColor }}
-            className="font-bold text-sm md:text-base leading-snug line-clamp-2 drop-shadow"
+        {/* ব্যাজ */}
+        {(design?.showBadge ?? true) && item.badgeText && (
+          <span
+            style={{ backgroundColor: item.badgeColor || "#FF2E2E" }}
+            className="absolute top-0 right-0 text-white text-[9px] font-black px-2 py-0.5 rounded-bl-lg uppercase shadow-md z-10"
           >
-            <MathText text={item.title} />
-          </h3>
-          {item.subtitle && (
-            <p className="text-gray-300 text-xs mt-1 line-clamp-1 drop-shadow-sm">{item.subtitle}</p>
-          )}
-        </div>
-
-        <div className="flex items-center justify-between text-[11px] font-bold text-cyan-300 group-hover:text-cyan-200">
-          <span>
-            {item.type === "EXAM_FIREBASE"
-              ? isLive
-                ? "লাইভ এক্সাম দিন"
-                : "পরীক্ষা দিন"
-              : item.type.startsWith("NOTE")
-              ? "নোট পড়ুন"
-              : item.type === "VIDEO_YOUTUBE"
-              ? "ভিডিও দেখুন"
-              : "খুলুন"}
+            {item.badgeText}
           </span>
-          <span className="transform group-hover:translate-x-1 transition-transform">→</span>
-        </div>
+        )}
+
+        {/* লাইভ বা প্রিমিয়াম স্ট্যাটাস */}
+        {isLive ? (
+          <span className="absolute top-2 left-2 bg-red-600 text-white text-[9px] font-black px-2 py-0.5 rounded-full flex items-center gap-1 animate-pulse shadow-md z-10">
+            <Radio size={10} /> LIVE
+          </span>
+        ) : item.isPremium ? (
+          <span className="absolute top-2 left-2 bg-black/60 border border-amber-400 text-amber-400 text-[9px] font-bold p-1 rounded-full shadow-md z-10">
+            <Lock size={10} />
+          </span>
+        ) : null}
       </div>
 
       {showModal && <ExamActionModal item={item} onClose={() => setShowModal(false)} />}
