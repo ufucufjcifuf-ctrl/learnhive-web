@@ -29,7 +29,7 @@ export function generateReferralCode(name: string): string {
   return `${prefix}${randomNum}`;
 }
 
-// ১. গুগল দিয়ে সাইন-ইন
+// ১. গুগল সাইন-ইন
 export async function signInWithGoogle(): Promise<UserProfile | null> {
   try {
     const result = await signInWithPopup(auth, googleProvider);
@@ -58,13 +58,16 @@ export async function signInWithGoogle(): Promise<UserProfile | null> {
       await setDoc(userRef, newUser);
       return newUser;
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error("Google Sign-In Error:", error);
+    if (error.code === "auth/unauthorized-domain") {
+      alert("⚠️ Firebase Console-এ আপনার Vercel ডোমেইনটি (learnhive-web.vercel.app) Authorized Domain হিসেবে যোগ করতে হবে।");
+    }
     return null;
   }
 }
 
-// ২. ইমেইল ও পাসওয়ার্ড দিয়ে সাইন-আপ
+// ২. ইমেইল সাইন-আপ
 export async function signUpWithEmail(
   name: string,
   email: string,
@@ -92,15 +95,14 @@ export async function signUpWithEmail(
     await setDoc(doc(db, "users", fbUser.uid), newUser);
     return { user: newUser, error: null };
   } catch (err: any) {
-    let msg = "সাইন-আপ ব্যর্থ হয়েছে। আবার চেষ্টা করুন।";
+    let msg = "সাইন-আপ ব্যর্থ হয়েছে।";
     if (err.code === "auth/email-already-in-use") msg = "এই ইমেইল দিয়ে ইতিমধ্যে অ্যাকাউন্ট খোলা আছে।";
     else if (err.code === "auth/weak-password") msg = "পাসওয়ার্ড অন্তত ৬ অক্ষরের হতে হবে।";
-    else if (err.code === "auth/invalid-email") msg = "ইমেইল অ্যাড্রেসটি সঠিক নয়।";
     return { user: null, error: msg };
   }
 }
 
-// ৩. ইমেইল ও পাসওয়ার্ড দিয়ে লগইন
+// ৩. ইমেইল লগইন
 export async function signInWithEmail(
   email: string,
   pass: string
@@ -132,24 +134,17 @@ export async function signInWithEmail(
       return { user: fallbackUser, error: null };
     }
   } catch (err: any) {
-    let msg = "লগইন ব্যর্থ হয়েছে। ইমেইল ও পাসওয়ার্ড যাচাই করুন।";
-    if (err.code === "auth/user-not-found" || err.code === "auth/wrong-password" || err.code === "auth/invalid-credential") {
-      msg = "ভুল ইমেইল অথবা পাসওয়ার্ড প্রদান করেছেন!";
-    }
-    return { user: null, error: msg };
+    return { user: null, error: "ভুল ইমেইল অথবা পাসওয়ার্ড প্রদান করেছেন!" };
   }
 }
 
-// ৪. পাসওয়ার্ড রিসেট ইমেইল পাঠানো
+// ৪. পাসওয়ার্ড রিসেট
 export async function resetPasswordEmail(email: string): Promise<{ success: boolean; error: string | null }> {
   try {
     await sendPasswordResetEmail(auth, email.trim());
     return { success: true, error: null };
   } catch (err: any) {
-    let msg = "পাসওয়ার্ড রিসেট ইমেইল পাঠানো যায়নি।";
-    if (err.code === "auth/user-not-found") msg = "এই ইমেইল দিয়ে কোনো অ্যাকাউন্ট খোলা নেই।";
-    else if (err.code === "auth/invalid-email") msg = "ইমেইল অ্যাড্রেসটি সঠিক নয়।";
-    return { success: false, error: msg };
+    return { success: false, error: "ইমেইলটি সঠিক নয় অথবা অ্যাকাউন্ট নেই।" };
   }
 }
 
@@ -170,7 +165,6 @@ export async function fetchUserProfile(uid: string): Promise<UserProfile | null>
     }
     return null;
   } catch (error) {
-    console.error(error);
     return null;
   }
 }
