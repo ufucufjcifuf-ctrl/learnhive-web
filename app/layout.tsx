@@ -29,7 +29,7 @@ export const metadata: Metadata = {
     default: "Learn Hive - অনলাইন এক্সাম ও মডেল টেস্ট প্ল্যাটফর্ম",
     template: "%s | Learn Hive",
   },
-  description: "বিসিএস, মেডিকেল, এইচএসসি ও এসএসসির পূর্ণাঙ্গ মডেল টেস্ট, নেগেটিভ মার্কিং সহ লাইভ ব্যাচ এক্সাম এবং তাৎক্ষণিক মেধা তালিকা।",
+  description: "বিসিএস, মেডিকেল, এইচএসসি ও এসএসসির পূর্ণাঙ্গ মডেল টেস্ট, নেগেティブ মার্কিং সহ লাইভ ব্যাচ এক্সাম এবং তাৎক্ষণিক মেধা তালিকা।",
   keywords: [
     "Learn Hive",
     "learnhive",
@@ -59,9 +59,9 @@ export const metadata: Metadata = {
     title: "Learn Hive - অনলাইন এক্সাম ও মডেল টেস্ট প্ল্যাটফর্ম",
     description: "বিসিএস, মেডিকেল ও এইচএসসি মডেল টেস্ট এবং লাইভ মেধা তালিকা।",
   },
-  // 🔥 Google Search Console ভেরিফিকেশন কোড (কনসোল থেকে কোড পাওয়ার পর এখানে বসাবেন)
+  // 🔥 আপনার আসল গুগল সার্চ কনসোল ভেরিফিকেশন কোড বসানো হয়েছে
   verification: {
-    google: "YOUR_GOOGLE_VERIFICATION_CODE",
+    google: "qr6lfBtiMz0vQkeVwvbCSf_cVPMA55RlOOZ-cSJ0Vao",
   },
 };
 
