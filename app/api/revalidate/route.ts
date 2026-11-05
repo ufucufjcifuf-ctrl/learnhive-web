@@ -11,9 +11,15 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // সম্পূর্ণ ওয়েবসাইটের প্রি-বিল্ট ক্যাশ সাথে সাথে ক্লিয়ার করে নতুন করে তৈরি করবে
+    // সম্পূর্ণ সাইট, লেআউট ও সাইটম্যাপের ক্যাশ ক্লিয়ার করে নতুন করে ডাটা রেন্ডার করবে
     revalidatePath("/", "layout");
-    return NextResponse.json({ revalidated: true, now: Date.now() });
+    revalidatePath("/sitemap.xml");
+
+    return NextResponse.json({
+      revalidated: true,
+      timestamp: Date.now(),
+      message: "Cache successfully purged across all routes and layout tree.",
+    });
   } catch (err: any) {
     return NextResponse.json({ message: err.message }, { status: 500 });
   }

@@ -5,7 +5,7 @@ import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { Question } from "@/types";
 import { MathText } from "@/components/MathText";
 import { sounds } from "@/lib/soundEffects";
-import { ArrowLeft, Flame, BrainCircuit, CheckCircle2, XCircle, ArrowRight, RotateCcw } from "lucide-react";
+import { ArrowLeft, Flame, CheckCircle2, XCircle } from "lucide-react";
 
 export default function AdaptivePracticePage() {
   const params = useParams();
@@ -34,15 +34,27 @@ export default function AdaptivePracticePage() {
   useEffect(() => {
     async function loadQuestions() {
       try {
-        let sheetId = id;
-        let tab = "Sheet1";
-        if (id.includes(":")) {
-          sheetId = id.split(":")[0];
-          tab = id.split(":")[1] || "Sheet1";
+        let all: Question[] = [];
+
+        // 🔥 ফায়ারবেস এক্সাম ও গুগল শিট উভয় ডাটা সোর্স হ্যান্ডলিং
+        if (id.startsWith("exam_")) {
+          const { doc, getDoc } = await import("firebase/firestore");
+          const { db } = await import("@/lib/firebase");
+          const snap = await getDoc(doc(db, "exams", id));
+          if (snap.exists()) {
+            all = snap.data()?.questions || [];
+          }
+        } else {
+          let sheetId = id;
+          let tab = "Sheet1";
+          if (id.includes(":")) {
+            sheetId = id.split(":")[0];
+            tab = id.split(":")[1] || "Sheet1";
+          }
+          const res = await fetch(`/api/sheet?sheetId=${encodeURIComponent(sheetId)}&tab=${encodeURIComponent(tab)}`);
+          const json = await res.json();
+          all = json.data || [];
         }
-        const res = await fetch(`/api/sheet?sheetId=${encodeURIComponent(sheetId)}&tab=${encodeURIComponent(tab)}`);
-        const json = await res.json();
-        const all: Question[] = json.data || [];
 
         const pA: Question[] = [];
         const pB: Question[] = [];
@@ -53,7 +65,7 @@ export default function AdaptivePracticePage() {
           if (q.difficulty === "A") pA.push(q);
           else if (q.difficulty === "C") pC.push(q);
           else if (q.difficulty === "D") pD.push(q);
-          else pB.push(q);
+          else pB.push(q); // Medium & None
         });
 
         pA.sort(() => Math.random() - 0.5);
@@ -65,7 +77,7 @@ export default function AdaptivePracticePage() {
         const initial = pB.pop() || pA.pop() || pC.pop() || pD.pop() || null;
         setCurrentQ(initial);
       } catch (e) {
-        console.error(e);
+        console.error("Adaptive practice load error:", e);
       } finally {
         setLoading(false);
       }
@@ -104,17 +116,21 @@ export default function AdaptivePracticePage() {
     const correctAnswers =
       currentQ.correctOptionIndices && currentQ.correctOptionIndices.length > 0
         ? currentQ.correctOptionIndices
-        : [currentQ.correctOptionIndex];
+        : currentQ.correctOptionIndex !== -1
+        ? [currentQ.correctOptionIndex]
+        : [];
 
-    const isCorrect = correctAnswers.includes(idx);
+    const isBonus = (currentQ.options || []).length > 0 && correctAnswers.length === 0;
+    const isCorrect = isBonus || correctAnswers.includes(idx);
 
     if (isCorrect) {
-      sounds.playCorrect(); // 🔥 সঠিক উত্তরের সাউন্ড
+      sounds.playCorrect();
       setCorrectCount((p) => p + 1);
       setStreak((p) => p + 1);
       const newConsecutive = consecutive + 1;
       setConsecutive(newConsecutive);
 
+      // পর পর ২টি সঠিক হলে কাঠিন্যের লেভেল বৃদ্ধি
       if (newConsecutive >= 2) {
         setConsecutive(0);
         const upMap: Record<string, "A" | "B" | "C" | "D"> = { A: "B", B: "C", C: "D", D: "D" };
@@ -123,9 +139,10 @@ export default function AdaptivePracticePage() {
         setTimeout(() => loadNextQuestion(currentLevel), 1800);
       }
     } else {
-      sounds.playWrong(); // 🔥 ভুল উত্তরের বাজার সাউন্ড
+      sounds.playWrong();
       setStreak(0);
       setConsecutive(0);
+      // ভুল হলে লেভেল ডাউন
       const downMap: Record<string, "A" | "B" | "C" | "D"> = { D: "C", C: "B", B: "A", A: "A" };
       setTimeout(() => loadNextQuestion(downMap[currentLevel]), 2500);
     }
@@ -149,17 +166,19 @@ export default function AdaptivePracticePage() {
 
   return (
     <div className="min-h-screen bg-[#0A0A0E] text-white flex flex-col items-center p-4 md:p-6 selection:bg-cyan-500 selection:text-black">
-      <div className="w-full max-w-2xl">
+      <div className="w-full max-w-2xl pb-16">
         
         {/* টপ হেডার ও স্ট্যাটাস */}
         <div className="flex justify-between items-center mb-6 pb-4 border-b border-white/5">
           <div className="flex items-center gap-3">
             <button
+              type="button"
               onClick={() => {
                 sounds.playClick();
                 router.back();
               }}
-              className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300"
+              className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 transition"
+              title="ফিরে যান"
             >
               <ArrowLeft size={18} />
             </button>
@@ -184,18 +203,22 @@ export default function AdaptivePracticePage() {
         {/* প্রশ্ন কার্ড */}
         {currentQ ? (
           <div className="bg-[#121218] border border-white/5 rounded-3xl p-6 md:p-8 shadow-xl">
-            <div className="text-base md:text-lg font-bold text-gray-100">
+            <div className="text-base md:text-lg font-bold text-gray-100 leading-relaxed">
               <MathText text={currentQ.text} />
             </div>
 
             <div className="flex flex-col gap-3 mt-6">
-              {currentQ.options.map((opt, idx) => {
+              {(currentQ.options || []).map((opt, idx) => {
                 const isSelected = selectedOpt === idx;
                 const correctAnswers =
                   currentQ.correctOptionIndices && currentQ.correctOptionIndices.length > 0
                     ? currentQ.correctOptionIndices
-                    : [currentQ.correctOptionIndex];
-                const isCorrect = correctAnswers.includes(idx);
+                    : currentQ.correctOptionIndex !== -1
+                    ? [currentQ.correctOptionIndex]
+                    : [];
+
+                const isBonus = (currentQ.options || []).length > 0 && correctAnswers.length === 0;
+                const isCorrect = isBonus || correctAnswers.includes(idx);
 
                 let optStyle = "bg-white/5 border-white/5 hover:border-white/20 text-gray-300";
                 if (selectedOpt !== null) {
@@ -206,18 +229,19 @@ export default function AdaptivePracticePage() {
                 return (
                   <button
                     key={idx}
+                    type="button"
                     disabled={selectedOpt !== null}
                     onClick={() => handleSelect(idx)}
                     className={`flex items-center gap-4 w-full p-4 rounded-2xl text-left font-semibold text-sm transition border ${optStyle}`}
                   >
-                    <span className="w-7 h-7 rounded-xl flex items-center justify-center font-bold text-xs bg-white/10">
+                    <span className="w-7 h-7 rounded-xl flex items-center justify-center font-bold text-xs bg-white/10 flex-shrink-0">
                       {String.fromCharCode(65 + idx)}
                     </span>
-                    <div className="flex-1">
+                    <div className="flex-1 overflow-x-auto no-scrollbar">
                       <MathText text={opt} />
                     </div>
-                    {selectedOpt !== null && isCorrect && <CheckCircle2 size={18} className="text-emerald-400" />}
-                    {selectedOpt !== null && isSelected && !isCorrect && <XCircle size={18} className="text-red-400" />}
+                    {selectedOpt !== null && isCorrect && <CheckCircle2 size={18} className="text-emerald-400 flex-shrink-0" />}
+                    {selectedOpt !== null && isSelected && !isCorrect && <XCircle size={18} className="text-red-400 flex-shrink-0" />}
                   </button>
                 );
               })}
@@ -231,7 +255,7 @@ export default function AdaptivePracticePage() {
             )}
           </div>
         ) : (
-          <div className="bg-[#121218] border border-white/5 rounded-3xl p-10 text-center">
+          <div className="bg-[#121218] border border-white/5 rounded-3xl p-10 text-center shadow-xl">
             <h2 className="text-xl font-bold text-emerald-400">অভিনন্দন! 🎉</h2>
             <p className="text-xs text-gray-400 mt-2">আপনি এই অধ্যায়ের সব প্রশ্ন সফলভাবে অনুশীলন করেছেন।</p>
           </div>

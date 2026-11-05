@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, Suspense } from "react";
+import React, { Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { CelebrationConfetti } from "@/components/CelebrationConfetti";
 import {
@@ -39,27 +39,27 @@ function ResultContent() {
       <div className="w-full max-w-md flex flex-col items-center text-center my-auto">
         
         {/* হেডলাইন */}
-        <h1 className="text-3xl font-black tracking-wide text-white flex items-center justify-center gap-2 mb-6">
+        <h1 className="text-2xl sm:text-3xl font-black tracking-wide text-white flex items-center justify-center gap-2 mb-6">
           {isOutstanding ? "Outstanding! 🌟" : isGreat ? "Great Job! 🎉" : "Keep Practicing! 💪"}
         </h1>
 
-        {/* সলিড পাই-চার্ট (অ্যান্ড্রয়েডের হুবহু পাই-চার্ট) */}
+        {/* সলিড পাই-চার্ট (অ্যান্ড্রয়েডের মতো হুবহু পাই-চার্ট) */}
         <div className="relative w-48 h-48 rounded-full mb-6 shadow-2xl flex items-center justify-center">
           <div
-            className="w-full h-full rounded-full transition-all duration-1000"
+            className="w-full h-full rounded-full transition-all duration-1000 shadow-inner"
             style={{
               background: `conic-gradient(#00E676 0% ${correctPct}%, #FF4545 ${correctPct}% ${correctPct + wrongPct}%, #4B5563 ${correctPct + wrongPct}% 100%)`,
             }}
           />
-          {/* পাই-চার্টের ভেতরের পার্সেন্টেজ টেক্সট */}
+          {/* পার্সেন্টেজ টেক্সট */}
           <div className="absolute inset-0 flex items-center justify-around pointer-events-none text-xs font-black text-black">
             {correctPct >= 10 && (
-              <span className="bg-white/90 px-2 py-0.5 rounded-full shadow-md text-emerald-800">
+              <span className="bg-white/95 px-2 py-0.5 rounded-full shadow-md text-emerald-800">
                 {correctPct}%
               </span>
             )}
             {skippedPct >= 10 && (
-              <span className="bg-white/90 px-2 py-0.5 rounded-full shadow-md text-gray-800">
+              <span className="bg-white/95 px-2 py-0.5 rounded-full shadow-md text-gray-800">
                 {skippedPct}%
               </span>
             )}
@@ -68,7 +68,7 @@ function ResultContent() {
 
         {/* প্রাপ্ত নম্বর */}
         <span className="text-xs text-gray-400 font-semibold block mb-1">Total Earned Score</span>
-        <span className="text-5xl font-black text-cyan-400 tracking-tight block mb-6">
+        <span className="text-4xl sm:text-5xl font-black text-cyan-400 tracking-tight block mb-6">
           {score.toFixed(2)}
         </span>
 
@@ -78,7 +78,7 @@ function ResultContent() {
           <span>Global XP Earned: {globalXP >= 0 ? `+${globalXP.toFixed(2)}` : globalXP.toFixed(2)}</span>
         </div>
 
-        {/* লেজেন্ডস (ডটস) */}
+        {/* লেজেন্ডস */}
         <div className="flex items-center justify-center gap-4 text-xs font-bold text-gray-300 mb-8">
           <span className="flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-400" /> {correctPct}% Correct
@@ -115,6 +115,7 @@ function ResultContent() {
         {/* বটম বাটন দুটি: HOME & REVIEW */}
         <div className="grid grid-cols-2 gap-3 w-full">
           <button
+            type="button"
             onClick={() => router.replace("/")}
             className="w-full bg-[#161620] hover:bg-[#1E1E2C] border border-white/10 text-white font-extrabold py-3.5 rounded-2xl text-xs flex items-center justify-center gap-2 transition"
           >
@@ -122,6 +123,7 @@ function ResultContent() {
           </button>
 
           <button
+            type="button"
             onClick={() => router.push(`/review/${encodeURIComponent(examId)}`)}
             className="w-full bg-cyan-400 hover:bg-cyan-300 text-black font-black py-3.5 rounded-2xl text-xs flex items-center justify-center gap-2 transition shadow-lg shadow-cyan-400/20"
           >
@@ -136,7 +138,13 @@ function ResultContent() {
 
 export default function ResultPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-[#0A0A0E] text-white flex items-center justify-center">ফলাফল তৈরি হচ্ছে...</div>}>
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-[#0A0A0E] text-white flex items-center justify-center">
+          ফলাফল তৈরি হচ্ছে...
+        </div>
+      }
+    >
       <ResultContent />
     </Suspense>
   );

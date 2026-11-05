@@ -31,7 +31,11 @@ export const ExamOverviewModal: React.FC<OverviewModalProps> = ({
       <div className="bg-[#121218] border border-white/10 rounded-3xl w-full max-w-md p-6 shadow-2xl">
         <div className="flex justify-between items-center mb-4 pb-3 border-b border-white/10">
           <h3 className="font-extrabold text-sm text-white">প্রশ্নের ওভারভিউ প্যালেট (OMR)</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-white text-xs font-bold">
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-gray-400 hover:text-white text-xs font-bold p-1 rounded-lg"
+          >
             ✕
           </button>
         </div>
@@ -48,12 +52,13 @@ export const ExamOverviewModal: React.FC<OverviewModalProps> = ({
             return (
               <button
                 key={idx}
+                type="button"
                 onClick={() => {
                   onSelectQuestion(idx);
                   onClose();
                 }}
                 className={`h-10 rounded-xl font-bold text-xs flex items-center justify-center transition ${btnBg} ${
-                  isCur ? "ring-2 ring-cyan-400" : ""
+                  isCur ? "ring-2 ring-cyan-400 text-cyan-300" : ""
                 }`}
               >
                 {idx + 1}
@@ -83,10 +88,18 @@ export const ExamConfirmSubmitModal: React.FC<{
           মোট উত্তর দিয়েছেন: <span className="text-cyan-400 font-bold">{answeredCount}</span> / {totalCount} টি
         </p>
         <div className="flex gap-3">
-          <button onClick={onCancel} className="flex-1 py-3 rounded-xl bg-white/5 text-gray-300 font-bold text-xs">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="flex-1 py-3 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 font-bold text-xs transition"
+          >
             বাতিল
           </button>
-          <button onClick={onConfirm} className="flex-1 py-3 rounded-xl bg-emerald-500 text-black font-black text-xs">
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="flex-1 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-black text-xs transition shadow-lg shadow-emerald-500/20"
+          >
             হ্যাঁ, জমা দিন
           </button>
         </div>
@@ -108,10 +121,18 @@ export const ExamExitModal: React.FC<{
         <h3 className="text-lg font-black text-white">পরীক্ষা ছেড়ে যাবেন?</h3>
         <p className="text-xs text-gray-400 mt-1 mb-6">এখন বের হয়ে গেলে পরীক্ষার বর্তমান প্রোগ্রেস মুছে যাবে।</p>
         <div className="flex gap-3">
-          <button onClick={onCancel} className="flex-1 py-3 rounded-xl bg-white/5 text-gray-300 font-bold text-xs">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="flex-1 py-3 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 font-bold text-xs transition"
+          >
             না
           </button>
-          <button onClick={onConfirm} className="flex-1 py-3 rounded-xl bg-red-500 text-white font-black text-xs">
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="flex-1 py-3 rounded-xl bg-red-500 hover:bg-red-600 text-white font-black text-xs transition shadow-lg shadow-red-500/20"
+          >
             বের হন
           </button>
         </div>

@@ -1,12 +1,18 @@
 import { Question } from "@/types";
 
-export async function fetchGoogleSheetQuestions(sheetId: string, tabName: string = "Sheet1"): Promise<Question[]> {
+export async function fetchGoogleSheetQuestions(
+  sheetId: string,
+  tabName: string = "Sheet1"
+): Promise<Question[]> {
   try {
-    const gvizUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(tabName)}`;
+    const cleanSheetId = sheetId.trim();
+    const cleanTab = tabName.trim() || "Sheet1";
+    const gvizUrl = `https://docs.google.com/spreadsheets/d/${cleanSheetId}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(cleanTab)}`;
+    
     const response = await fetch(gvizUrl, { next: { revalidate: 300 } });
 
     if (!response.ok) {
-      throw new Error(`Google Sheets error: HTTP ${response.status}`);
+      throw new Error(`Google Sheets fetch failed: HTTP ${response.status}`);
     }
 
     const rawString = await response.text();
@@ -14,7 +20,7 @@ export async function fetchGoogleSheetQuestions(sheetId: string, tabName: string
     const endIndex = rawString.lastIndexOf("}");
 
     if (startIndex === -1 || endIndex === -1 || startIndex >= endIndex) {
-      throw new Error("Invalid Google Sheet response format");
+      throw new Error("Invalid Google Sheet response format.");
     }
 
     const jsonString = rawString.substring(startIndex, endIndex + 1);
@@ -24,7 +30,7 @@ export async function fetchGoogleSheetQuestions(sheetId: string, tabName: string
     const questions: Question[] = [];
 
     const isHeaderRow = (firstCell: string, secondCell: string) => {
-      const headers = ["question", "প্রশ্ন", "q", "text", "serial", "sl no", "নং"];
+      const headers = ["question", "প্রশ্ন", "q", "text", "serial", "sl no", "নং", "sl"];
       return headers.includes(firstCell.toLowerCase()) || secondCell.toLowerCase().startsWith("option");
     };
 
@@ -35,12 +41,16 @@ export async function fetchGoogleSheetQuestions(sheetId: string, tabName: string
       const qText = safeGet(0);
       const optA = safeGet(1);
 
+      // ফাঁকা বা হেডার রো স্কিপ করা
       if (!qText || isHeaderRow(qText, optA)) return;
 
       const optB = safeGet(2);
       const optC = safeGet(3);
       const optD = safeGet(4);
       const col5Val = safeGet(5);
+
+      // কমপক্ষে ২টি অপশন না থাকলে ক্রুটিপূর্ণ প্রশ্ন হিসেবে বাদ দেওয়া
+      if (!optA || !optB) return;
 
       let optE: string | null = null;
       let correctAnsStr = "";
@@ -55,34 +65,44 @@ export async function fetchGoogleSheetQuestions(sheetId: string, tabName: string
         optE = col5Val;
         correctAnsStr = safeGet(6).toUpperCase();
         explanation = safeGet(7);
-        difficulty = (["A", "B", "C", "D"].includes(safeGet(8).toUpperCase()) ? safeGet(8).toUpperCase() : "NONE") as Question["difficulty"];
+        const diffRaw = safeGet(8).toUpperCase();
+        difficulty = (["A", "B", "C", "D"].includes(diffRaw) ? diffRaw : "NONE") as Question["difficulty"];
         customPos = parseFloat(safeGet(9)) || null;
         customNeg = parseFloat(safeGet(10)) || null;
       } else {
         correctAnsStr = col5Val.toUpperCase();
         explanation = safeGet(6);
-        difficulty = (["A", "B", "C", "D"].includes(safeGet(7).toUpperCase()) ? safeGet(7).toUpperCase() : "NONE") as Question["difficulty"];
+        const diffRaw = safeGet(7).toUpperCase();
+        difficulty = (["A", "B", "C", "D"].includes(diffRaw) ? diffRaw : "NONE") as Question["difficulty"];
         customPos = parseFloat(safeGet(8)) || null;
         customNeg = parseFloat(safeGet(9)) || null;
       }
+
+      const options = [optA, optB];
+      if (optC) options.push(optC);
+      if (optD) options.push(optD);
+      if (optE) options.push(optE);
 
       const correctIndices: number[] = [];
       if (correctAnsStr) {
         correctAnsStr.split(",").forEach((part) => {
           const char = part.trim();
-          if (char === "A") correctIndices.push(0);
-          if (char === "B") correctIndices.push(1);
-          if (char === "C") correctIndices.push(2);
-          if (char === "D") correctIndices.push(3);
-          if (char === "E") correctIndices.push(4);
+          let idx = -1;
+          if (char === "A") idx = 0;
+          else if (char === "B") idx = 1;
+          else if (char === "C") idx = 2;
+          else if (char === "D") idx = 3;
+          else if (char === "E") idx = 4;
+
+          // নিশ্চিত করা যাতে ইনডেক্সটি অপশনের পরিমাণের ভেতর থাকে
+          if (idx !== -1 && idx < options.length) {
+            correctIndices.push(idx);
+          }
         });
       }
 
-      const options = [optA, optB, optC, optD];
-      if (optE) options.push(optE);
-
       questions.push({
-        id: `${sheetId}_q_${i}`,
+        id: `${cleanSheetId}_q_${i}`,
         text: qText,
         options,
         correctOptionIndex: correctIndices.length > 0 ? correctIndices[0] : -1,
@@ -91,11 +111,13 @@ export async function fetchGoogleSheetQuestions(sheetId: string, tabName: string
         customPositiveMark: customPos,
         customNegativeMark: customNeg,
         difficulty,
+        timestamp: Date.now(),
       });
     });
 
     return questions;
   } catch (error: any) {
-    throw new Error(error.message);
+    console.error("Sheet Fetch Error:", error);
+    throw new Error(error.message || "Failed to load sheet questions.");
   }
 }

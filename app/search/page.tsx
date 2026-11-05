@@ -22,7 +22,11 @@ export default function SearchPage() {
 
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem("mcqhub_search_history");
-      if (saved) setHistory(JSON.parse(saved));
+      if (saved) {
+        try {
+          setHistory(JSON.parse(saved));
+        } catch (e) {}
+      }
     }
   }, []);
 
@@ -46,14 +50,19 @@ export default function SearchPage() {
   };
 
   const handleShareClick = (e: React.MouseEvent, item: DashboardItem) => {
-    e.stopPropagation(); // Prevent opening the exam
-    const slug = item.slug || item.command || item.id;
-    const url = `${window.location.origin}/p/${encodeURIComponent(slug)}`;
+    e.stopPropagation();
+    const targetSlug = item.slug?.trim() || item.command || item.id;
+    const url = `${window.location.origin}/p/${encodeURIComponent(targetSlug)}`;
+    
     if (navigator.share) {
-      navigator.share({ title: item.seoTitle || item.title, url, text: `Check out this exam on MCQ Hub: ${item.title}` });
+      navigator.share({
+        title: item.seoTitle || item.title,
+        url,
+        text: `Learn Hive-এ পরীক্ষা দিন:\n${item.title}\n${url}`
+      });
     } else {
       navigator.clipboard.writeText(url);
-      alert("পরীক্ষার লিংক কপি হয়েছে!");
+      alert("পরীক্ষার লিঙ্ক কপি হয়েছে!");
     }
   };
 
@@ -78,8 +87,13 @@ export default function SearchPage() {
     <div className="min-h-screen bg-[#0A0A0E] text-white flex flex-col items-center p-4 md:p-6 selection:bg-cyan-500 selection:text-black">
       <div className="w-full max-w-xl pb-24">
         
+        {/* সার্চ বার */}
         <div className="flex items-center gap-3 mb-4">
-          <button onClick={() => router.back()} className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300">
+          <button
+            type="button"
+            onClick={() => router.back()}
+            className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 transition"
+          >
             <ArrowLeft size={18} />
           </button>
           <div className="relative flex-1">
@@ -95,27 +109,66 @@ export default function SearchPage() {
           </div>
         </div>
 
+        {/* ফিল্টার বাটন */}
         <div className="flex gap-2 mb-6 text-xs font-bold">
-          <button onClick={() => setActiveFilter("ALL")} className={`px-3 py-1.5 rounded-xl border transition ${activeFilter === "ALL" ? "bg-cyan-500 text-black border-cyan-500" : "bg-white/5 border-white/5 text-gray-400"}`}>সব</button>
-          <button onClick={() => setActiveFilter("EXAM")} className={`px-3 py-1.5 rounded-xl border transition ${activeFilter === "EXAM" ? "bg-cyan-500 text-black border-cyan-500" : "bg-white/5 border-white/5 text-gray-400"}`}>পরীক্ষা</button>
-          <button onClick={() => setActiveFilter("FOLDER")} className={`px-3 py-1.5 rounded-xl border transition ${activeFilter === "FOLDER" ? "bg-cyan-500 text-black border-cyan-500" : "bg-white/5 border-white/5 text-gray-400"}`}>ফোল্ডার</button>
-          <button onClick={() => setActiveFilter("NOTE")} className={`px-3 py-1.5 rounded-xl border transition ${activeFilter === "NOTE" ? "bg-cyan-500 text-black border-cyan-500" : "bg-white/5 border-white/5 text-gray-400"}`}>নোট</button>
+          <button
+            type="button"
+            onClick={() => setActiveFilter("ALL")}
+            className={`px-3 py-1.5 rounded-xl border transition ${
+              activeFilter === "ALL" ? "bg-cyan-500 text-black border-cyan-500" : "bg-white/5 border-white/5 text-gray-400"
+            }`}
+          >
+            সব
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveFilter("EXAM")}
+            className={`px-3 py-1.5 rounded-xl border transition ${
+              activeFilter === "EXAM" ? "bg-cyan-500 text-black border-cyan-500" : "bg-white/5 border-white/5 text-gray-400"
+            }`}
+          >
+            পরীক্ষা
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveFilter("FOLDER")}
+            className={`px-3 py-1.5 rounded-xl border transition ${
+              activeFilter === "FOLDER" ? "bg-cyan-500 text-black border-cyan-500" : "bg-white/5 border-white/5 text-gray-400"
+            }`}
+          >
+            ফোল্ডার
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveFilter("NOTE")}
+            className={`px-3 py-1.5 rounded-xl border transition ${
+              activeFilter === "NOTE" ? "bg-cyan-500 text-black border-cyan-500" : "bg-white/5 border-white/5 text-gray-400"
+            }`}
+          >
+            নোট
+          </button>
         </div>
 
+        {/* সাম্প্রতিক সার্চ ইতিহাস */}
         {!queryText && history.length > 0 && (
           <div className="mb-6">
             <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">সাম্প্রতিক সার্চ</h3>
             <div className="flex flex-wrap gap-2">
               {history.map((term, i) => (
                 <div key={i} className="flex items-center gap-2 bg-[#121218] border border-white/5 px-3 py-1.5 rounded-xl text-xs text-gray-300">
-                  <span className="cursor-pointer hover:text-cyan-400" onClick={() => setQueryText(term)}>{term}</span>
-                  <button onClick={() => removeHistoryItem(term)} className="text-gray-500 hover:text-red-400"><X size={12} /></button>
+                  <span className="cursor-pointer hover:text-cyan-400" onClick={() => setQueryText(term)}>
+                    {term}
+                  </span>
+                  <button type="button" onClick={() => removeHistoryItem(term)} className="text-gray-500 hover:text-red-400">
+                    <X size={12} />
+                  </button>
                 </div>
               ))}
             </div>
           </div>
         )}
 
+        {/* ফলাফল তালিকা */}
         {queryText.trim() && (
           <div className="flex flex-col gap-2.5">
             <span className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">
@@ -131,21 +184,33 @@ export default function SearchPage() {
                 <div
                   key={item.id}
                   onClick={() => handleSearchClick(item)}
-                  className="bg-[#121218] border border-white/5 hover:border-cyan-500/40 p-4 rounded-2xl cursor-pointer flex items-center justify-between transition"
+                  className="bg-[#121218] border border-white/5 hover:border-cyan-500/40 p-4 rounded-2xl cursor-pointer flex items-center justify-between transition shadow-md"
                 >
                   <div className="flex items-center gap-3 flex-1 pr-2">
-                    <div className="p-2.5 rounded-xl bg-white/5 text-cyan-400">
-                      {item.type === "EXAM_FIREBASE" ? <Play size={16} /> : item.type.startsWith("NOTE") ? <FileText size={16} /> : <Folder size={16} />}
+                    <div className="p-2.5 rounded-xl bg-white/5 text-cyan-400 flex-shrink-0">
+                      {item.type === "EXAM_FIREBASE" ? (
+                        <Play size={16} />
+                      ) : item.type.startsWith("NOTE") ? (
+                        <FileText size={16} />
+                      ) : (
+                        <Folder size={16} />
+                      )}
                     </div>
                     <div>
-                      <h4 className="font-bold text-sm text-white line-clamp-1"><MathText text={item.title} /></h4>
+                      <h4 className="font-bold text-sm text-white line-clamp-1">
+                        <MathText text={item.title} />
+                      </h4>
                       {item.subtitle && <p className="text-[11px] text-gray-400 line-clamp-1">{item.subtitle}</p>}
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2">
-                    {/* 🔥 NEW: Share Button */}
-                    <button onClick={(e) => handleShareClick(e, item)} className="p-2 text-gray-400 hover:text-cyan-400 transition" title="Share Exam">
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <button
+                      type="button"
+                      onClick={(e) => handleShareClick(e, item)}
+                      className="p-2 text-gray-400 hover:text-cyan-400 transition"
+                      title="শেয়ার করুন"
+                    >
                       <Share2 size={16} />
                     </button>
                     <span className="text-xs text-cyan-400 font-extrabold">খুলুন →</span>

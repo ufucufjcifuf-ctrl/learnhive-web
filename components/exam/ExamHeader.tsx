@@ -17,43 +17,68 @@ interface Props {
 }
 
 export const ExamHeader: React.FC<Props> = ({
-  examTitle, questionsCount, timeLeft, submitted, isListView,
-  setIsListView, onExitClick, onOverviewClick, onSubmitClick
+  examTitle,
+  questionsCount,
+  timeLeft,
+  submitted,
+  isListView,
+  setIsListView,
+  onExitClick,
+  onOverviewClick,
+  onSubmitClick,
 }) => {
+  const isOneMinuteLeft = timeLeft < 60 && timeLeft > 0 && !submitted;
+
   return (
     <>
-      {timeLeft < 60 && !submitted && (
-        <div className="w-full bg-red-600/90 text-white text-xs font-bold py-2 px-4 text-center flex items-center justify-center gap-2 sticky top-0 z-50 animate-bounce">
-          <AlertTriangle size={16} /> সতর্কবার্তা: আর মাত্র ১ মিনিট বাকি আছে!
+      {isOneMinuteLeft && (
+        <div className="w-full bg-red-600/90 text-white text-xs font-bold py-2 px-4 text-center flex items-center justify-center gap-2 sticky top-0 z-50 animate-pulse">
+          <AlertTriangle size={15} /> সতর্কবার্তা: আর মাত্র ১ মিনিট বাকি আছে!
         </div>
       )}
 
       <header className="w-full max-w-5xl flex justify-between items-center px-4 md:px-8 py-3.5 border-b border-white/10 bg-[#121218]/90 backdrop-blur sticky top-0 z-40">
         <div className="flex items-center gap-3">
           <button
+            type="button"
             onClick={onExitClick}
             className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition"
+            title="হোমে ফিরুন"
           >
             <Home size={18} />
           </button>
           <div>
             <h1 className="font-bold text-sm md:text-base text-white line-clamp-1">{examTitle}</h1>
-            <p className="text-[11px] text-gray-400">{submitted ? "ফলাফল বিশ্লেষণ" : `প্রশ্ন: ${questionsCount} টি`}</p>
+            <p className="text-[11px] text-gray-400">
+              {submitted ? "ফলাফল বিশ্লেষণ" : `মোট প্রশ্ন: ${questionsCount} টি`}
+            </p>
           </div>
         </div>
 
         <div className="flex items-center gap-2 md:gap-3">
           {!submitted && (
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full font-mono font-bold text-xs border bg-cyan-500/10 border-cyan-500 text-cyan-400">
+            <div
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full font-mono font-bold text-xs border ${
+                timeLeft < 180
+                  ? "bg-red-500/10 border-red-500 text-red-400 animate-pulse"
+                  : "bg-cyan-500/10 border-cyan-500 text-cyan-400"
+              }`}
+            >
               <Clock size={14} />
-              {Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, "0")}
+              <span>
+                {Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, "0")}
+              </span>
             </div>
           )}
 
           {!submitted && (
             <button
-              onClick={() => { sounds.playClick(); setIsListView((p) => !p); }}
-              className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-cyan-400 border border-white/10"
+              type="button"
+              onClick={() => {
+                sounds.playClick();
+                setIsListView((p) => !p);
+              }}
+              className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-cyan-400 border border-white/10 transition"
               title={isListView ? "একক প্রশ্ন মোড" : "তালিকা মোড"}
             >
               {isListView ? <Layers size={18} /> : <List size={18} />}
@@ -61,16 +86,24 @@ export const ExamHeader: React.FC<Props> = ({
           )}
 
           <button
-            onClick={() => { sounds.playClick(); onOverviewClick(); }}
-            className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-amber-400 border border-white/10"
-            title="প্রশ্নের ওভারভিউ (OMR)"
+            type="button"
+            onClick={() => {
+              sounds.playClick();
+              onOverviewClick();
+            }}
+            className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-amber-400 border border-white/10 transition"
+            title="প্রশ্নের ওভারভিউ প্যালেট (OMR)"
           >
             <Eye size={18} />
           </button>
 
           {!submitted && (
             <button
-              onClick={() => { sounds.playClick(); onSubmitClick(); }}
+              type="button"
+              onClick={() => {
+                sounds.playClick();
+                onSubmitClick();
+              }}
               className="bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold px-4 py-2 rounded-xl text-xs transition shadow-emerald-500/20 shadow-lg"
             >
               সাবমিট

@@ -7,6 +7,7 @@ export default function robots(): MetadataRoute.Robots {
       allow: "/",
       disallow: ["/api/"],
     },
-    sitemap: "https://learnhive.vercel.app/sitemap.xml",
+    // 🔥 সঠিক Vercel ডোমেইন ফিক্স করা হলো
+    sitemap: "https://learnhive-web.vercel.app/sitemap.xml",
   };
 }

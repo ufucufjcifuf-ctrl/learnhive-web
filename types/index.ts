@@ -117,4 +117,7 @@ export interface DashboardItem {
   seoTitle?: string | null;
   seoDescription?: string | null;
   slug?: string | null;
+
+  // 🔥 NEW: টাইপস্ক্রিপ্ট ফিক্স
+  timestamp?: number;
 }
