@@ -7,6 +7,7 @@ import { Lock, Radio } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { ExamActionModal } from "@/components/ExamActionModal";
 import { getSmartImageUrl, syncAssetImages } from "@/lib/imageService";
+import { createFolderSlug } from "@/lib/slugUtils";
 
 export const DynamicCard: React.FC<{ item: DashboardItem }> = ({ item }) => {
   const router = useRouter();
@@ -37,7 +38,6 @@ export const DynamicCard: React.FC<{ item: DashboardItem }> = ({ item }) => {
     else if (design?.shapeType === "LEAF") borderRadius = `${radius}px 0px ${radius}px 0px`;
     else if (design?.shapeType === "CAPSULE") borderRadius = "50px";
 
-    // ছবি থাকলে ব্যাকগ্রাউন্ড একদম ট্রান্সপারেন্ট থাকবে যাতে কোনো রং উপচে না পড়ে
     if (resolvedImageUrl) {
       return {
         borderRadius,
@@ -84,7 +84,8 @@ export const DynamicCard: React.FC<{ item: DashboardItem }> = ({ item }) => {
       }
       if (actionUri.startsWith("app://folder/")) {
         const folderCmd = actionUri.replace("app://folder/", "").split("?")[0];
-        router.push(`/folder/${encodeURIComponent(folderCmd)}?title=${encodeURIComponent(item.title)}`);
+        const cleanSlug = createFolderSlug(item.title, folderCmd, item.slug);
+        router.push(`/f/${encodeURIComponent(cleanSlug)}`);
         return;
       }
       if (actionUri.startsWith("app://page/")) {
@@ -99,8 +100,9 @@ export const DynamicCard: React.FC<{ item: DashboardItem }> = ({ item }) => {
     if (item.type === "EXAM_FIREBASE") {
       setShowModal(true);
     } else if (item.type === "FOLDER" || item.type.includes("SECTION")) {
-      // 🔥 সেশন ক্যাশের ওপর নির্ভর না করে সরাসরি সার্ভার প্রি-রেন্ডার ফোল্ডার রুটে নেভিগেট
-      router.push(`/folder/${encodeURIComponent(rawCmd)}?title=${encodeURIComponent(item.title)}`);
+      // 🔥 ক্লিক করলে সরাসরি ছোট ও সুন্দর /f/[slug] লিংকে প্রবেশ করবে
+      const cleanSlug = createFolderSlug(item.title, rawCmd, item.slug);
+      router.push(`/f/${encodeURIComponent(cleanSlug)}`);
     } else if (item.type === "NOTE_PDF" || item.type === "NOTE_SHEET") {
       router.push(`/note/${encodeURIComponent(rawCmd)}?title=${encodeURIComponent(item.title)}&type=${item.type}`);
     } else if (item.type === "HTML_PAGE") {
@@ -140,7 +142,6 @@ export const DynamicCard: React.FC<{ item: DashboardItem }> = ({ item }) => {
           </div>
         )}
 
-        {/* ব্যাজ */}
         {(design?.showBadge ?? true) && item.badgeText && (
           <span
             style={{ backgroundColor: item.badgeColor || "#FF2E2E" }}
@@ -150,7 +151,6 @@ export const DynamicCard: React.FC<{ item: DashboardItem }> = ({ item }) => {
           </span>
         )}
 
-        {/* লাইভ বা প্রিমিয়াম আইকন */}
         {isLive ? (
           <span className="absolute top-2 left-2 bg-red-600 text-white text-[9px] font-black px-2 py-0.5 rounded-full flex items-center gap-1 animate-pulse shadow-md z-10">
             <Radio size={10} /> LIVE

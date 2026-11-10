@@ -3,35 +3,35 @@ import { db } from "@/lib/firebase";
 import { doc, getDoc } from "firebase/firestore";
 import { DashboardItem } from "@/types";
 import { extractAllExamsRecursively } from "@/lib/serverExamService";
+import { createFolderSlug } from "@/lib/slugUtils";
 
 export const revalidate = 3600;
 
-// ফায়ারস্টোর থেকে প্রতিটি ফোল্ডার ও সাব-ফোল্ডার রিকার্সিভলি বের করার ফাংশন
+// সাইটের প্রতিটি ফোল্ডারের জন্য শর্ট স্লাগ তৈরি ও কালেকশন
 async function extractAllFoldersRecursively(
   items: DashboardItem[]
-): Promise<{ id: string; lastModified: Date }[]> {
-  const folders: { id: string; lastModified: Date }[] = [];
+): Promise<{ slug: string; lastModified: Date }[]> {
+  const folders: { slug: string; lastModified: Date }[] = [];
 
   for (const item of items) {
     if (item.isHidden) continue;
 
     const isFolder = item.type === "FOLDER" || item.type.includes("SECTION");
-    const folderCmd = (item.command || item.id || "").trim();
+    const rawCmd = (item.command || item.id || "").trim();
 
-    if (isFolder && folderCmd) {
+    if (isFolder && rawCmd) {
+      const cleanSlug = createFolderSlug(item.title, rawCmd, item.slug);
       folders.push({
-        id: folderCmd,
+        slug: cleanSlug,
         lastModified: new Date(item.timestamp || Date.now()),
       });
     }
 
-    // এমবেডেড ফোল্ডারের গভীরে সার্চ
     if (item.embeddedItems && item.embeddedItems.length > 0) {
       const nestedFolders = await extractAllFoldersRecursively(item.embeddedItems);
       folders.push(...nestedFolders);
     }
 
-    // লিংকড ফোল্ডারের ভেতর সার্চ
     if (item.type === "FOLDER" && item.loadType === "LINKED" && item.command) {
       try {
         const subSnap = await getDoc(doc(db, "configuration", item.command));
@@ -69,7 +69,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     if (layoutDoc.exists()) {
       const items = (layoutDoc.data()?.items as DashboardItem[]) || [];
 
-      // ১. সকল এক্সামের লিংক যুক্ত করা
+      // ১. সকল এক্সামের ক্লিন লিংক
       const extractedExams = await extractAllExamsRecursively(items);
       const uniqueExams = new Set<string>();
 
@@ -85,15 +85,15 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         }
       });
 
-      // ২. 🔥 আপনার চাহিদামতো সকল ফোল্ডার সাইটম্যাপে যুক্ত করে ভার্সেল ক্যাশে ছড়িয়ে দেওয়া
+      // ২. সকল ফোল্ডারের শর্ট ক্লিন লিংক (/f/...)
       const extractedFolders = await extractAllFoldersRecursively(items);
       const uniqueFolders = new Set<string>();
 
       extractedFolders.forEach((folder) => {
-        if (!uniqueFolders.has(folder.id)) {
-          uniqueFolders.add(folder.id);
+        if (!uniqueFolders.has(folder.slug)) {
+          uniqueFolders.add(folder.slug);
           dynamicRoutes.push({
-            url: `${baseUrl}/folder/${encodeURIComponent(folder.id)}`,
+            url: `${baseUrl}/f/${encodeURIComponent(folder.slug)}`,
             lastModified: folder.lastModified,
             changeFrequency: "weekly",
             priority: 0.85,
