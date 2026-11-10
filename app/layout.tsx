@@ -29,7 +29,8 @@ export const metadata: Metadata = {
     default: "Learn Hive - অনলাইন এক্সাম ও মডেল টেস্ট প্ল্যাটফর্ম",
     template: "%s | Learn Hive",
   },
-  description: "বিসিএস, মেডিকেল, এইচএসসি ও এসএসসির পূর্ণাঙ্গ মডেল টেস্ট, নেগেティブ মার্কিং সহ লাইভ ব্যাচ এক্সাম এবং তাৎক্ষণিক মেধা তালিকা।",
+  description:
+    "বিসিএস, মেডিকেল, এইচএসসি ও এসএসসির পূর্ণাঙ্গ মডেল টেস্ট, নেগেটিভ মার্কিং সহ লাইভ ব্যাচ এক্সাম এবং তাৎক্ষণিক মেধা তালিকা।",
   keywords: [
     "Learn Hive",
     "learnhive",
@@ -39,7 +40,7 @@ export const metadata: Metadata = {
     "HSC MCQ Exam",
     "মেডিকেল ভর্তি পরীক্ষা প্রস্তুতি",
     "Online Model Test Bangladesh",
-    "MCQ Hub"
+    "MCQ Hub",
   ],
   manifest: "/manifest.json",
   icons: {
@@ -53,13 +54,24 @@ export const metadata: Metadata = {
     siteName: "Learn Hive",
     locale: "bn_BD",
     type: "website",
+    // 🔥 ভার্সেল ত্রিভুজ লোগো দূর করতে ব্র্যান্ডেড সোশ্যাল কার্ড ইমেজ সেট করা হলো
+    images: [
+      {
+        url: "https://learnhive-web.vercel.app/api/og?title=Learn%20Hive%20Online%20Exam%20Platform&q=Model%20Test&t=Instant%20Rank",
+        width: 1200,
+        height: 630,
+        alt: "Learn Hive EdTech Platform",
+      },
+    ],
   },
   twitter: {
     card: "summary_large_image",
     title: "Learn Hive - অনলাইন এক্সাম ও মডেল টেস্ট প্ল্যাটফর্ম",
     description: "বিসিএস, মেডিকেল ও এইচএসসি মডেল টেস্ট এবং লাইভ মেধা তালিকা।",
+    images: [
+      "https://learnhive-web.vercel.app/api/og?title=Learn%20Hive%20Online%20Exam%20Platform&q=Model%20Test&t=Instant%20Rank",
+    ],
   },
-  // 🔥 আপনার আসল গুগল সার্চ কনসোল ভেরিফিকেশন কোড বসানো হয়েছে
   verification: {
     google: "qr6lfBtiMz0vQkeVwvbCSf_cVPMA55RlOOZ-cSJ0Vao",
   },
@@ -72,7 +84,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="bn" className="dark">
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased bg-[#0A0A0E] text-white selection:bg-cyan-500 selection:text-black`}>
+      <body
+        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-[#0A0A0E] text-white selection:bg-cyan-500 selection:text-black`}
+      >
         <NetworkBanner />
         {children}
         <BottomNavBar />

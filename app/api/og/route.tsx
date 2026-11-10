@@ -1,14 +1,20 @@
 import { ImageResponse } from "next/og";
 import { NextRequest } from "next/server";
 
+// 🔥 ভার্সেল এজ নেটওয়ার্কে ০ মিলিসেকেন্ডে ফাস্ট সোশ্যাল ইমেজ জেনারেটর
 export const runtime = "edge";
 
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const title = searchParams.get("title") || "Online Model Test & Exam";
+    const title = searchParams.get("title") || "Learn Hive Online Portal";
     const questions = searchParams.get("q") || "25";
-    const time = searchParams.get("t") || "20";
+    const timeParam = searchParams.get("t") || "20";
+
+    // 🔥 ফোল্ডার হলে '📁 Study Folder' ও '📚 Items' দেখাবে, এক্সাম হলে '⏱️ Minutes' ও '📝 Questions' দেখাবে
+    const isFolder = timeParam.toLowerCase() === "folder";
+    const timeBadgeText = isFolder ? "📁 Study Folder" : `⏱️ ${timeParam} Minutes`;
+    const countBadgeText = isFolder ? `📚 ${questions} Items` : `📝 ${questions} Questions`;
 
     return new ImageResponse(
       (
@@ -49,10 +55,10 @@ export async function GET(req: NextRequest) {
             </span>
           </div>
 
-          {/* Exam Title */}
+          {/* Title */}
           <h1
             style={{
-              fontSize: "56px",
+              fontSize: "54px",
               fontWeight: "900",
               color: "#FFFFFF",
               textAlign: "center",
@@ -76,7 +82,7 @@ export async function GET(req: NextRequest) {
               }}
             >
               <span style={{ fontSize: "28px", color: "#00F0FF", fontWeight: "bold" }}>
-                📝 {questions} Questions
+                {countBadgeText}
               </span>
             </div>
             <div
@@ -89,7 +95,7 @@ export async function GET(req: NextRequest) {
               }}
             >
               <span style={{ fontSize: "28px", color: "#FFD700", fontWeight: "bold" }}>
-                ⏱️ {time} Minutes
+                {timeBadgeText}
               </span>
             </div>
           </div>
@@ -97,7 +103,7 @@ export async function GET(req: NextRequest) {
           {/* Call to action */}
           <div style={{ display: "flex", alignItems: "center", marginTop: "10px" }}>
             <span style={{ fontSize: "24px", color: "#A0A0A0", fontWeight: "bold" }}>
-              Free Online Model Test • Android App & Web 🚀
+              Online Model Test & Study Platform • Android App & Web 🚀
             </span>
           </div>
         </div>
