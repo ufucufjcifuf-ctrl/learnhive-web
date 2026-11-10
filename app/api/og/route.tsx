@@ -1,9 +1,6 @@
 import { ImageResponse } from "next/og";
 import { NextRequest } from "next/server";
 
-// 🔥 ভার্সেল এজ নেটওয়ার্কে ০ মিলিসেকেন্ডে ফাস্ট সোশ্যাল ইমেজ জেনারেটর
-export const runtime = "edge";
-
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
@@ -11,7 +8,7 @@ export async function GET(req: NextRequest) {
     const questions = searchParams.get("q") || "25";
     const timeParam = searchParams.get("t") || "20";
 
-    // 🔥 ফোল্ডার হলে '📁 Study Folder' ও '📚 Items' দেখাবে, এক্সাম হলে '⏱️ Minutes' ও '📝 Questions' দেখাবে
+    // ফোল্ডার হলে '📁 Study Folder' ও '📚 Items', এক্সাম হলে '⏱️ Minutes' ও '📝 Questions'
     const isFolder = timeParam.toLowerCase() === "folder";
     const timeBadgeText = isFolder ? "📁 Study Folder" : `⏱️ ${timeParam} Minutes`;
     const countBadgeText = isFolder ? `📚 ${questions} Items` : `📝 ${questions} Questions`;

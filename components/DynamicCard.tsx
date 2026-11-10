@@ -5,7 +5,6 @@ import { DashboardItem } from "@/types";
 import { MathText } from "@/components/MathText";
 import { Lock, Radio } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { cacheEmbeddedTree } from "@/lib/layoutService";
 import { ExamActionModal } from "@/components/ExamActionModal";
 import { getSmartImageUrl, syncAssetImages } from "@/lib/imageService";
 
@@ -100,9 +99,7 @@ export const DynamicCard: React.FC<{ item: DashboardItem }> = ({ item }) => {
     if (item.type === "EXAM_FIREBASE") {
       setShowModal(true);
     } else if (item.type === "FOLDER" || item.type.includes("SECTION")) {
-      if (item.embeddedItems && item.embeddedItems.length > 0) {
-        cacheEmbeddedTree([item]);
-      }
+      // 🔥 সেশন ক্যাশের ওপর নির্ভর না করে সরাসরি সার্ভার প্রি-রেন্ডার ফোল্ডার রুটে নেভিগেট
       router.push(`/folder/${encodeURIComponent(rawCmd)}?title=${encodeURIComponent(item.title)}`);
     } else if (item.type === "NOTE_PDF" || item.type === "NOTE_SHEET") {
       router.push(`/note/${encodeURIComponent(rawCmd)}?title=${encodeURIComponent(item.title)}&type=${item.type}`);
@@ -129,7 +126,6 @@ export const DynamicCard: React.FC<{ item: DashboardItem }> = ({ item }) => {
         style={getCardStyle()}
         className="group relative w-full h-full overflow-hidden cursor-pointer shadow-lg hover:shadow-cyan-500/20 hover:scale-[1.02] transition-all duration-200"
       >
-        {/* 🔥 object-fill ব্যবহার করা হয়েছে যাতে অ্যান্ড্রয়েডের FillBounds এর মতো ছবি একদম না কেটে পুরো ফ্রেমে বসে */}
         {resolvedImageUrl ? (
           <img
             src={resolvedImageUrl}

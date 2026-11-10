@@ -5,6 +5,11 @@ import { DashboardItem } from "@/types";
 const CACHE_KEY = "mcqhub_cached_layout";
 const VERSION_KEY = "mcqhub_content_version";
 
+// 🔥 পুরোনো ফাইলের ব্যাকওয়ার্ড কম্প্যাটিবিলিটির জন্য সেফ নো-অপ এক্সপোর্ট
+export function cacheEmbeddedTree(items?: DashboardItem[]): void {
+  // সার্ভার প্রি-রেন্ডারিং চালু থাকায় ক্লায়েন্টে সেশনের প্রয়োজন নেই
+}
+
 // হোম লেআউট ফেচ ও লোকাল সিঙ্ক
 export async function getCachedHomeLayout(): Promise<DashboardItem[]> {
   try {
@@ -56,7 +61,7 @@ function findFolderInList(items: DashboardItem[], folderId: string): DashboardIt
   return null;
 }
 
-// কন্টাক্ট পেজ বা ক্লায়েন্ট ফোল্ডার লোডার (সেশন মেমোরি ছাড়া সরাসরি ফায়ারস্টোর ও ক্যাশ ফলব্যাক)
+// কন্টাক্ট পেজ বা ক্লায়েন্ট ফোল্ডার লোডার (সরাসরি ফায়ারস্টোর ও ক্যাশ ফলব্যাক)
 export async function getFolderItems(folderId: string): Promise<DashboardItem[]> {
   if (!folderId) return [];
   const cleanId = folderId.trim();
