@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
-import { db } from "@/lib/firebase";
+import { db, auth } from "@/lib/firebase";
 import { collection, addDoc, query, where, getDocs } from "firebase/firestore";
 import { Question } from "@/types";
 import { recordDailyActivity } from "@/lib/streakService";
@@ -19,29 +19,24 @@ export default function BatchLiveExamPage() {
   const id = params?.id ? decodeURIComponent(String(params.id)) : "";
   const examTitle = searchParams.get("title") || "Live Batch Exam";
 
-  // স্টেজ ১: নাম ও রোল স্টেট
   const [joined, setJoined] = useState(false);
   const [name, setName] = useState("");
   const [roll, setRoll] = useState("");
 
-  // স্টেজ ২: পরীক্ষা স্টেট
   const [questions, setQuestions] = useState<Question[]>([]);
   const [loadingQuestions, setLoadingQuestions] = useState(false);
   const [answers, setAnswers] = useState<Record<number, number>>({});
   const [currentIdx, setCurrentIdx] = useState(0);
 
-  // টাইমার ও স্কোর স্টেট
   const [timeLeft, setTimeLeft] = useState(15 * 60);
   const [totalDuration, setTotalDuration] = useState(15 * 60);
   const [submitted, setSubmitted] = useState(false);
   const [finalScore, setFinalScore] = useState<number | null>(null);
 
-  // স্টেজ ৩: মেধা তালিকা স্টেট
   const [meritList, setMeritList] = useState<MeritItem[]>([]);
   const [loadingMerit, setLoadingMerit] = useState(false);
   const isSubmittingRef = useRef(false);
 
-  // প্রশ্ন লোড করা
   useEffect(() => {
     async function loadBatchQuestions() {
       if (!id) return;
@@ -86,7 +81,6 @@ export default function BatchLiveExamPage() {
     loadBatchQuestions();
   }, [id]);
 
-  // অ্যান্টি-চিট ডিটেকশন
   useEffect(() => {
     if (!joined || submitted) return;
 
@@ -100,7 +94,6 @@ export default function BatchLiveExamPage() {
     return () => document.removeEventListener("visibilitychange", handleVisibility);
   }, [joined, submitted]);
 
-  // টাইমার
   useEffect(() => {
     if (!joined || submitted || questions.length === 0) return;
 
@@ -118,7 +111,6 @@ export default function BatchLiveExamPage() {
     return () => clearInterval(timer);
   }, [joined, submitted, questions.length]);
 
-  // মেধা তালিকা ফেচ করা
   const loadMeritList = useCallback(async () => {
     setLoadingMerit(true);
     try {
@@ -126,10 +118,15 @@ export default function BatchLiveExamPage() {
       const snap = await getDocs(q);
       const list: MeritItem[] = [];
       snap.forEach((d) => {
-        list.push(d.data() as MeritItem);
+        const data = d.data();
+        list.push({
+          name: data.userName || data.studentName || "Unknown",
+          roll: data.roll || "N/A",
+          score: Number(data.score) || 0,
+          timeTakenSec: Number(data.timeTakenSec) || 0,
+        });
       });
 
-      // টাই-ব্রেক: বেশি নম্বর আগে, সমান নম্বরে কম সময় নেওয়া আগে
       list.sort((a, b) => b.score - a.score || a.timeTakenSec - b.timeTakenSec);
       setMeritList(list);
     } catch (e) {
@@ -139,7 +136,6 @@ export default function BatchLiveExamPage() {
     }
   }, [id]);
 
-  // পরীক্ষা সাবমিট
   const handleSubmitExam = useCallback(async () => {
     if (isSubmittingRef.current) return;
     isSubmittingRef.current = true;
@@ -184,11 +180,18 @@ export default function BatchLiveExamPage() {
     recordDailyActivity();
 
     try {
+      const currentUser = auth.currentUser;
+      // 🔥 ফায়ারস্টোর স্কিমা ঠিক করা হলো (userName, isLiveAttempt, totalQuestions নিশ্চিত করা হয়েছে)
       await addDoc(collection(db, "exam_results"), {
         examId: id,
-        studentName: name,
-        roll: roll,
+        userId: currentUser?.uid || `guest_${Date.now()}`,
+        userName: name.trim(),
+        studentName: name.trim(),
+        userPhoto: currentUser?.photoURL || "",
+        roll: roll.trim(),
         score: score,
+        totalQuestions: questions.length,
+        isLiveAttempt: true,
         timeTakenSec: timeSpent,
         timestamp: Date.now(),
       });
@@ -198,7 +201,6 @@ export default function BatchLiveExamPage() {
     }
   }, [id, name, roll, questions, answers, totalDuration, timeLeft, loadMeritList]);
 
-  // CSV এক্সপোর্ট
   const exportToCSV = () => {
     let csv = "Rank,Student Name,Roll / Phone,Score,Time (Seconds)\n";
     meritList.forEach((m, idx) => {
@@ -246,6 +248,7 @@ export default function BatchLiveExamPage() {
               </div>
 
               <button
+                type="button"
                 onClick={handleSubmitExam}
                 className="bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold px-4 py-2 rounded-xl text-xs transition shadow-emerald-500/20 shadow-lg"
               >
@@ -263,7 +266,7 @@ export default function BatchLiveExamPage() {
                 isFlagged={false}
                 isBookmarked={false}
                 submitted={false}
-                onSelect={(optIdx) => setAnswers((prev) => ({ ...prev, [currentIdx]: optIdx }))}
+                onSelect={(_, optIdx) => setAnswers((prev) => ({ ...prev, [currentIdx]: optIdx }))}
                 onToggleFlag={() => {}}
                 onToggleBookmark={() => {}}
                 onReport={() => {}}
@@ -271,6 +274,7 @@ export default function BatchLiveExamPage() {
 
               <div className="flex justify-between items-center bg-[#121218] border border-white/5 rounded-2xl p-4 shadow-xl">
                 <button
+                  type="button"
                   disabled={currentIdx === 0}
                   onClick={() => setCurrentIdx((p) => p - 1)}
                   className="flex items-center gap-2 text-xs font-bold text-gray-400 hover:text-white disabled:opacity-30 px-3 py-2 rounded-xl hover:bg-white/5"
@@ -278,6 +282,7 @@ export default function BatchLiveExamPage() {
                   <ArrowLeft size={16} /> আগের প্রশ্ন
                 </button>
                 <button
+                  type="button"
                   disabled={currentIdx === questions.length - 1}
                   onClick={() => setCurrentIdx((p) => p + 1)}
                   className="flex items-center gap-2 text-xs font-bold text-cyan-400 hover:text-cyan-300 disabled:opacity-30 px-3 py-2 rounded-xl hover:bg-white/5"

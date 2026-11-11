@@ -20,7 +20,16 @@ type PageProps = {
   params: Promise<{ id: string }>;
 };
 
-// 🔥 ১. ডাইনামিক এসইও ও সোশ্যাল ওপেন-গ্রাফ জেনারেটর
+// এসইও স্কিমার জন্য টেক্সট থেকে অপ্রয়োজনীয় HTML ও LaTeX চিহ্ন বাদ দেওয়ার হেল্পার
+function sanitizeTextForSchema(text: string): string {
+  if (!text) return "";
+  return text
+    .replace(/%%/g, "")
+    .replace(/<[^>]*>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .trim();
+}
+
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { id } = await params;
   const data = await getExamSeoData(id);
@@ -52,29 +61,27 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   };
 }
 
-// 🔥 ২. এসইও ল্যান্ডিং পেজ (Server Component)
 export default async function ExamLandingPage({ params }: PageProps) {
   const { id } = await params;
   const data = await getExamSeoData(id);
   const teaserQuestions = data.questions.slice(0, 3);
 
-  // গুগলের জন্য Schema.org (JSON-LD) স্ট্রাকচার্ড ডেটা
   const jsonLd = {
     "@context": "https://schema.org",
     "@graph": [
       {
         "@type": "Quiz",
-        "name": data.title,
-        "description": data.seoDescription,
+        "name": sanitizeTextForSchema(data.title),
+        "description": sanitizeTextForSchema(data.seoDescription),
         "educationalLevel": "Intermediate",
         "timeRequired": `PT${data.durationMinutes}M`,
         "typicalAgeRange": "15-30",
         "hasPart": data.questions.slice(0, 5).map((q) => ({
           "@type": "Question",
-          "name": q.text,
+          "name": sanitizeTextForSchema(q.text),
           "suggestedAnswer": q.options.map((opt) => ({
             "@type": "Answer",
-            "text": opt,
+            "text": sanitizeTextForSchema(opt),
           })),
         })),
       },
@@ -83,7 +90,7 @@ export default async function ExamLandingPage({ params }: PageProps) {
         "mainEntity": [
           {
             "@type": "Question",
-            "name": `এই ${data.title} মডেল টেস্টে অংশ নিতে কি কোনো ফি দিতে হবে?`,
+            "name": `এই ${sanitizeTextForSchema(data.title)} মডেল টেস্টে অংশ নিতে কি কোনো ফি দিতে হবে?`,
             "acceptedAnswer": {
               "@type": "Answer",
               "text": "না, Learn Hive প্ল্যাটফর্মে এই মডেল টেস্টটি সম্পূর্ণ বিনামূল্যে অনলাইনে এবং অ্যান্ড্রয়েড অ্যাপে দেওয়া যায়।",
@@ -127,7 +134,7 @@ export default async function ExamLandingPage({ params }: PageProps) {
           {
             "@type": "ListItem",
             "position": 3,
-            "name": data.title,
+            "name": sanitizeTextForSchema(data.title),
             "item": `https://learnhive-web.vercel.app/p/${encodeURIComponent(data.slug)}`,
           },
         ],
@@ -137,13 +144,11 @@ export default async function ExamLandingPage({ params }: PageProps) {
 
   return (
     <div className="min-h-screen bg-[#0A0A0E] text-white selection:bg-cyan-500 selection:text-black pb-24">
-      {/* Schema.org ইনজেকশন */}
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
 
-      {/* টপ ন্যাভবার */}
       <header className="w-full bg-[#121218]/80 border-b border-white/5 py-3.5 px-4 sticky top-0 z-40 backdrop-blur-md">
         <div className="max-w-4xl mx-auto flex justify-between items-center">
           <Link
@@ -156,7 +161,6 @@ export default async function ExamLandingPage({ params }: PageProps) {
         </div>
       </header>
 
-      {/* ব্যানার */}
       <div className="w-full bg-cyan-950/40 border-b border-cyan-500/20 text-cyan-300 text-xs py-2.5 px-4 flex justify-center items-center gap-2">
         <Star size={14} className="text-cyan-400 fill-cyan-400 flex-shrink-0" />
         <span className="font-bold text-center">
@@ -165,7 +169,6 @@ export default async function ExamLandingPage({ params }: PageProps) {
       </div>
 
       <main className="max-w-3xl mx-auto px-4 sm:px-6 pt-10">
-        {/* ব্রেডক্রাম্ব */}
         <nav className="flex items-center gap-1.5 text-xs text-gray-500 mb-6 overflow-x-auto no-scrollbar">
           <Link href="/" className="hover:text-cyan-400">হোম</Link>
           <ChevronRight size={12} />
@@ -174,7 +177,6 @@ export default async function ExamLandingPage({ params }: PageProps) {
           <span className="text-gray-300 font-semibold line-clamp-1">{data.title}</span>
         </nav>
 
-        {/* হেডলাইন */}
         <div className="text-center mb-8">
           <span className="bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-widest inline-block mb-3">
             ফ্রি অনলাইন মডেল টেস্ট
@@ -187,7 +189,6 @@ export default async function ExamLandingPage({ params }: PageProps) {
           </p>
         </div>
 
-        {/* পরিসংখ্যান গ্রিড */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
           <div className="bg-[#121218] border border-white/5 p-4 rounded-2xl flex flex-col items-center justify-center text-center shadow-lg">
             <Target size={22} className="text-emerald-400 mb-1.5" />
@@ -211,12 +212,10 @@ export default async function ExamLandingPage({ params }: PageProps) {
           </div>
         </div>
 
-        {/* অ্যাকশন বাটনসমূহ */}
         <div className="mb-10">
           <AppRedirectButton examId={data.command} examTitle={data.title} />
         </div>
 
-        {/* সিলেবাস বা বিশেষ নির্দেশিকা (যদি থাকে) */}
         {data.syllabusNote && (
           <div className="mb-8 bg-[#121218] border border-white/5 p-6 rounded-3xl shadow-xl">
             <h3 className="font-extrabold text-white text-sm flex items-center gap-2 mb-2 text-amber-400">
@@ -228,7 +227,6 @@ export default async function ExamLandingPage({ params }: PageProps) {
           </div>
         )}
 
-        {/* নমুনা প্রশ্ন টিজার (গুগল রোবট যাতে পুরো প্রশ্ন ও অপশন পড়ে) */}
         {teaserQuestions.length > 0 && (
           <div className="mt-8">
             <h2 className="text-lg font-black text-white mb-4 flex items-center gap-2">
@@ -247,7 +245,7 @@ export default async function ExamLandingPage({ params }: PageProps) {
                         বাকি {data.totalQuestions - 2}টি প্রশ্ন ও ব্যাখ্যা দেখতে পরীক্ষা শুরু করুন
                       </p>
                       <Link
-                        href={`/exam/${encodeURIComponent(data.command)}?title=${encodeURIComponent(data.title)}`}
+                        href={`/exam/${encodeURIComponent(data.slug || data.command)}?title=${encodeURIComponent(data.title)}`}
                         className="bg-cyan-500 hover:bg-cyan-400 text-black font-extrabold px-5 py-2 rounded-xl text-xs flex items-center gap-1.5 shadow-lg shadow-cyan-500/20"
                       >
                         <Play size={14} className="fill-black" /> পরীক্ষা দিন
@@ -278,7 +276,6 @@ export default async function ExamLandingPage({ params }: PageProps) {
           </div>
         )}
 
-        {/* সচরাচর জিজ্ঞাসিত প্রশ্নাবলী (FAQ Accordion - Google SEO Booster) */}
         <div className="mt-12 bg-[#121218] border border-white/5 p-6 rounded-3xl shadow-xl">
           <h2 className="text-base font-black text-white mb-4 flex items-center gap-2">
             <HelpCircle size={18} className="text-amber-400" /> সচরাচর জিজ্ঞাসিত প্রশ্ন (FAQ)

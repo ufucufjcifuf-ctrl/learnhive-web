@@ -6,6 +6,7 @@ import { MathText } from "@/components/MathText";
 import { Play, BrainCircuit, BookOpen, Award, X, Share2, Calendar, Radio } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { QuestionCountModal } from "@/components/QuestionCountModal";
+import { createExamSlug, createNoteSlug } from "@/lib/slugUtils";
 
 interface ExamActionModalProps {
   item: DashboardItem | null;
@@ -21,6 +22,9 @@ export const ExamActionModal: React.FC<ExamActionModalProps> = ({ item, onClose 
   const rawCmd = item.command || item.id;
   const config = item.examConfig;
 
+  // ব্রাউজার অ্যাড্রেসবারের জন্য ক্লিন স্লাগ
+  const cleanExamSlug = createExamSlug(item.title, rawCmd, item.slug);
+
   const isLive =
     config?.startTimeMs &&
     config?.liveEndTimeMs &&
@@ -28,12 +32,11 @@ export const ExamActionModal: React.FC<ExamActionModalProps> = ({ item, onClose 
     Date.now() <= config.liveEndTimeMs;
 
   const handleShare = () => {
-    // 🔥 THE SEO LINK (Landing Page)
-    const slug = item.slug || rawCmd;
+    const slug = item.slug || cleanExamSlug;
     const url = `${window.location.origin}/p/${encodeURIComponent(slug)}`;
     
     if (navigator.share) {
-      navigator.share({ title: item.seoTitle || item.title, url, text: `Give this exam on MCQ Hub: ${item.title}` });
+      navigator.share({ title: item.seoTitle || item.title, url, text: `Give this exam on Learn Hive: ${item.title}\n${url}` });
     } else {
       navigator.clipboard.writeText(url);
       alert("পরীক্ষার লিংক কপি হয়েছে!");
@@ -49,8 +52,13 @@ export const ExamActionModal: React.FC<ExamActionModalProps> = ({ item, onClose 
       setShowCountModal(true);
     } else {
       onClose();
+      // টাইমার ফিক্স: অ্যাডমিনের নির্ধারিত duration ও মার্কিং বাধ্যতামূলক পাঠানো
+      const durationParam = config?.durationMinutes ? `&duration=${config.durationMinutes}` : "";
+      const posParam = `&pos=${config?.positiveMark ?? 1.0}`;
+      const negParam = `&neg=${config?.negativeMark ?? 0.25}`;
+
       router.push(
-        `/exam/${encodeURIComponent(rawCmd)}?title=${encodeURIComponent(item.title)}${liveParams}`
+        `/exam/${encodeURIComponent(cleanExamSlug)}?title=${encodeURIComponent(item.title)}${durationParam}${posParam}${negParam}${liveParams}`
       );
     }
   };
@@ -70,6 +78,7 @@ export const ExamActionModal: React.FC<ExamActionModalProps> = ({ item, onClose 
 
             <div className="flex items-center gap-1">
               <button
+                type="button"
                 onClick={handleShare}
                 className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-cyan-400 transition"
                 title="শেয়ার করুন"
@@ -77,6 +86,7 @@ export const ExamActionModal: React.FC<ExamActionModalProps> = ({ item, onClose 
                 <Share2 size={16} />
               </button>
               <button
+                type="button"
                 onClick={onClose}
                 className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition"
               >
@@ -105,6 +115,7 @@ export const ExamActionModal: React.FC<ExamActionModalProps> = ({ item, onClose 
 
           <div className="flex flex-col gap-2.5">
             <button
+              type="button"
               onClick={handleStartExamClick}
               className={`w-full py-3.5 px-4 rounded-2xl font-extrabold text-xs transition flex items-center justify-center gap-2 shadow-lg ${
                 isLive
@@ -117,9 +128,10 @@ export const ExamActionModal: React.FC<ExamActionModalProps> = ({ item, onClose 
             </button>
 
             <button
+              type="button"
               onClick={() => {
                 onClose();
-                router.push(`/adaptive/${encodeURIComponent(rawCmd)}?title=${encodeURIComponent(item.title)}`);
+                router.push(`/adaptive/${encodeURIComponent(cleanExamSlug)}?title=${encodeURIComponent(item.title)}`);
               }}
               className="w-full py-3.5 px-4 rounded-2xl bg-pink-600/15 hover:bg-pink-600/25 border border-pink-500/40 text-pink-300 font-extrabold text-xs transition flex items-center justify-center gap-2"
             >
@@ -128,10 +140,12 @@ export const ExamActionModal: React.FC<ExamActionModalProps> = ({ item, onClose 
 
             {config?.attachedNoteLink && (
               <button
+                type="button"
                 onClick={() => {
                   onClose();
+                  const noteSlug = createNoteSlug(item.title, config.attachedNoteLink!);
                   router.push(
-                    `/note/${encodeURIComponent(config.attachedNoteLink!)}?title=${encodeURIComponent(
+                    `/note/${encodeURIComponent(noteSlug)}?title=${encodeURIComponent(
                       item.title
                     )}&type=${config.attachedNoteType || "NOTE_PDF"}`
                   );
@@ -144,6 +158,7 @@ export const ExamActionModal: React.FC<ExamActionModalProps> = ({ item, onClose 
 
             {item.routineHtml && (
               <button
+                type="button"
                 onClick={() => {
                   onClose();
                   router.push(`/page/${encodeURIComponent(item.id)}?title=${encodeURIComponent(item.title)}`);
@@ -154,7 +169,9 @@ export const ExamActionModal: React.FC<ExamActionModalProps> = ({ item, onClose 
               </button>
             )}
 
+            {/* 🔥 লিডারবোর্ড ফিক্স: আসল rawCmd দিয়ে লিডারবোর্ড লোড হবে যাতে ফায়ারস্টোর ডক মিসম্যাচ না হয় */}
             <button
+              type="button"
               onClick={() => {
                 onClose();
                 router.push(`/leaderboard/${encodeURIComponent(rawCmd)}?title=${encodeURIComponent(item.title)}`);
@@ -170,7 +187,7 @@ export const ExamActionModal: React.FC<ExamActionModalProps> = ({ item, onClose 
 
       {showCountModal && (
         <QuestionCountModal
-          examId={rawCmd}
+          examId={cleanExamSlug}
           examTitle={item.title}
           defaultDuration={config?.durationMinutes || 20}
           allowDifficultyFilter={config?.allowDifficultyFilter || false}

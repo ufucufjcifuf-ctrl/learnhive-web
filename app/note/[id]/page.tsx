@@ -5,6 +5,7 @@ import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { MathText } from "@/components/MathText";
 import { NoteAnnotationDrawer } from "@/components/NoteAnnotationDrawer";
 import { ArrowLeft, BookOpen, ChevronLeft, ChevronRight, Bookmark } from "lucide-react";
+import { findItemDeeply } from "@/lib/layoutService";
 
 export default function NoteViewerPage() {
   const params = useParams();
@@ -12,9 +13,12 @@ export default function NoteViewerPage() {
   const router = useRouter();
 
   const id = params?.id ? decodeURIComponent(String(params.id)) : "";
-  const title = searchParams.get("title") || "Note Viewer";
-  const noteType = searchParams.get("type") || "NOTE_PDF";
+  const initialTitle = searchParams.get("title") || "Note Viewer";
+  const initialType = searchParams.get("type") || "NOTE_PDF";
 
+  const [title, setTitle] = useState(initialTitle);
+  const [noteType, setNoteType] = useState(initialType);
+  const [actualDriveOrSheetUrl, setActualDriveOrSheetUrl] = useState<string>("");
   const [pages, setPages] = useState<string[]>([]);
   const [currentPage, setCurrentPage] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -33,34 +37,48 @@ export default function NoteViewerPage() {
   useEffect(() => {
     async function loadNote() {
       if (!id) return;
-      if (noteType === "NOTE_SHEET") {
-        try {
-          let sheetId = id;
+      setLoading(true);
+
+      try {
+        let targetCommand = id;
+
+        // 🔥 শর্ট স্লাগ রেজোলিউশন
+        if (!id.startsWith("http://") && !id.startsWith("https://") && !id.includes("drive.google.com")) {
+          const matchedItem = await findItemDeeply(id);
+          if (matchedItem) {
+            targetCommand = matchedItem.command || matchedItem.id;
+            setTitle(matchedItem.title);
+            setNoteType(matchedItem.type || initialType);
+          }
+        }
+
+        setActualDriveOrSheetUrl(targetCommand);
+
+        if (noteType === "NOTE_SHEET") {
+          let sheetId = targetCommand;
           let tab = "Sheet1";
-          if (id.includes(":")) {
-            sheetId = id.split(":")[0];
-            tab = id.split(":")[1] || "Sheet1";
+          if (targetCommand.includes(":")) {
+            sheetId = targetCommand.split(":")[0];
+            tab = targetCommand.split(":")[1] || "Sheet1";
           }
           const res = await fetch(`/api/sheet?sheetId=${encodeURIComponent(sheetId)}&tab=${encodeURIComponent(tab)}`);
           const json = await res.json();
           if (json.data && json.data.length > 0) {
             setPages(json.data.map((q: any) => q.text));
           }
-        } catch (e) {
-          console.error(e);
-        } finally {
-          setLoading(false);
         }
-      } else {
+      } catch (e) {
+        console.error("Failed to load note content:", e);
+      } finally {
         setLoading(false);
       }
     }
+
     loadNote();
-  }, [id, noteType]);
+  }, [id, noteType, initialType]);
 
   return (
     <div className="min-h-screen bg-[#0A0A0E] text-white flex flex-col items-center selection:bg-cyan-500 selection:text-black">
-      {/* টপ ন্যাভবার */}
       <header className="w-full max-w-4xl flex justify-between items-center px-4 md:px-8 py-3.5 border-b border-white/10 bg-[#121218]/90 backdrop-blur sticky top-0 z-40">
         <div className="flex items-center gap-3">
           <button onClick={() => router.back()} className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300">
@@ -91,7 +109,6 @@ export default function NoteViewerPage() {
         </div>
       </header>
 
-      {/* কনটেন্ট এরিয়া */}
       <main className="w-full max-w-4xl flex-1 flex flex-col p-4 md:p-6 pb-20">
         {loading ? (
           <div className="flex-1 flex flex-col items-center justify-center gap-3 py-24">
@@ -101,7 +118,7 @@ export default function NoteViewerPage() {
         ) : noteType === "NOTE_PDF" ? (
           <div className="w-full flex-1 min-h-[80vh] rounded-3xl overflow-hidden border border-white/10 shadow-2xl bg-black">
             <iframe
-              src={getEmbedPdfUrl(id)}
+              src={getEmbedPdfUrl(actualDriveOrSheetUrl)}
               className="w-full h-full min-h-[80vh] border-0"
               allow="autoplay"
               title={title}
@@ -139,9 +156,8 @@ export default function NoteViewerPage() {
         )}
       </main>
 
-      {/* পার্সোনাল স্টাডি নোট ড্রয়ার */}
       <NoteAnnotationDrawer
-        noteId={id}
+        noteId={actualDriveOrSheetUrl || id}
         isOpen={showNoteDrawer}
         onClose={() => setShowNoteDrawer(false)}
       />

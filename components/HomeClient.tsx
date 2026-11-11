@@ -7,6 +7,7 @@ import { Navbar } from "@/components/Navbar";
 import { GlobalBanner } from "@/components/GlobalBanner";
 import { Footer } from "@/components/Footer";
 import { searchItemsWithRanking } from "@/lib/searchService";
+import { createFolderSlug, createExamSlug, createNoteSlug } from "@/lib/slugUtils";
 import {
   Home,
   Award,
@@ -28,7 +29,6 @@ export const HomeClient: React.FC<{ initialItems: DashboardItem[] }> = ({ initia
   const router = useRouter();
   const [search, setSearch] = useState("");
 
-  // অ্যান্ড্রয়েডের হুবহু র‍্যাঙ্কিং সার্চ অ্যালগরিদম (০ms লেটেন্সি)
   const filteredItems = search.trim()
     ? searchItemsWithRanking(initialItems, search)
     : initialItems;
@@ -36,11 +36,14 @@ export const HomeClient: React.FC<{ initialItems: DashboardItem[] }> = ({ initia
   const handleSearchItemClick = (item: DashboardItem) => {
     const rawCmd = item.command || item.id;
     if (item.type === "EXAM_FIREBASE") {
-      router.push(`/exam/${encodeURIComponent(rawCmd)}?title=${encodeURIComponent(item.title)}`);
+      const cleanSlug = createExamSlug(item.title, rawCmd, item.slug);
+      router.push(`/exam/${encodeURIComponent(cleanSlug)}?title=${encodeURIComponent(item.title)}`);
     } else if (item.type === "FOLDER" || item.type.includes("SECTION")) {
-      router.push(`/folder/${encodeURIComponent(rawCmd)}?title=${encodeURIComponent(item.title)}`);
+      const cleanSlug = createFolderSlug(item.title, rawCmd, item.slug);
+      router.push(`/f/${encodeURIComponent(cleanSlug)}`);
     } else if (item.type.startsWith("NOTE")) {
-      router.push(`/note/${encodeURIComponent(rawCmd)}?title=${encodeURIComponent(item.title)}&type=${item.type}`);
+      const noteSlug = createNoteSlug(item.title, rawCmd, null);
+      router.push(`/note/${encodeURIComponent(noteSlug)}?title=${encodeURIComponent(item.title)}&type=${item.type}`);
     }
   };
 
@@ -95,7 +98,6 @@ export const HomeClient: React.FC<{ initialItems: DashboardItem[] }> = ({ initia
           </div>
 
           {search.trim() ? (
-            /* সার্চ রেজাল্ট ভিউ */
             <div className="flex flex-col gap-2.5">
               <span className="text-xs font-bold text-gray-400 mb-2">ফলাফল ({filteredItems.length} টি)</span>
               {filteredItems.length === 0 ? (
@@ -107,7 +109,7 @@ export const HomeClient: React.FC<{ initialItems: DashboardItem[] }> = ({ initia
                   <div
                     key={item.id}
                     onClick={() => handleSearchItemClick(item)}
-                    className="bg-[#121218] border border-white/5 hover:border-cyan-500/40 p-4 rounded-2xl cursor-pointer flex items-center justify-between transition"
+                    className="bg-[#121218] border border-white/5 hover:border-cyan-500/40 p-4 rounded-2xl cursor-pointer flex items-center justify-between transition active:scale-[0.98]"
                   >
                     <div className="flex items-center gap-3">
                       <div className="p-2.5 rounded-xl bg-white/5 text-cyan-400">
@@ -124,7 +126,6 @@ export const HomeClient: React.FC<{ initialItems: DashboardItem[] }> = ({ initia
               )}
             </div>
           ) : (
-            /* সম্পূর্ণ রেডিমেড প্রাক-রেন্ডার করা ম্যাট্রিক্স */
             <div className="flex flex-col flex-1">
               <SmartMatrixCanvas items={initialItems} />
               <Footer />

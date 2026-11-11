@@ -7,7 +7,7 @@ import { Lock, Radio } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { ExamActionModal } from "@/components/ExamActionModal";
 import { getSmartImageUrl, syncAssetImages } from "@/lib/imageService";
-import { createFolderSlug } from "@/lib/slugUtils";
+import { createFolderSlug, createExamSlug, createNoteSlug } from "@/lib/slugUtils";
 
 export const DynamicCard: React.FC<{ item: DashboardItem }> = ({ item }) => {
   const router = useRouter();
@@ -29,6 +29,22 @@ export const DynamicCard: React.FC<{ item: DashboardItem }> = ({ item }) => {
       });
     }
   }, [item.iconUrl]);
+
+  // 🔥 স্মার্ট ব্যাকগ্রাউন্ড প্রি-ফেচিং (০ মিলিসেকেন্ড ট্রানজিশন)
+  useEffect(() => {
+    const rawCmd = item.command || item.id;
+    const isFolder = item.type === "FOLDER" || item.type.includes("SECTION");
+
+    if (isFolder && rawCmd) {
+      const cleanSlug = createFolderSlug(item.title, rawCmd, item.slug);
+      router.prefetch(`/f/${encodeURIComponent(cleanSlug)}`);
+    } else if (item.type === "NOTE_PDF" || item.type === "NOTE_SHEET") {
+      const noteSlug = createNoteSlug(item.title, rawCmd, null);
+      router.prefetch(`/note/${encodeURIComponent(noteSlug)}?title=${encodeURIComponent(item.title)}&type=${item.type}`);
+    } else if (item.type === "HTML_PAGE") {
+      router.prefetch(`/page/${encodeURIComponent(item.id)}?title=${encodeURIComponent(item.title)}`);
+    }
+  }, [item, router]);
 
   const getCardStyle = (): React.CSSProperties => {
     const radius = design?.cornerRadius ?? 16;
@@ -79,7 +95,8 @@ export const DynamicCard: React.FC<{ item: DashboardItem }> = ({ item }) => {
       }
       if (actionUri.startsWith("app://exam/")) {
         const examCmd = actionUri.replace("app://exam/", "");
-        router.push(`/exam/${encodeURIComponent(examCmd)}?title=${encodeURIComponent(item.title)}`);
+        const cleanSlug = createExamSlug(item.title, examCmd, item.slug);
+        router.push(`/exam/${encodeURIComponent(cleanSlug)}?title=${encodeURIComponent(item.title)}`);
         return;
       }
       if (actionUri.startsWith("app://folder/")) {
@@ -100,11 +117,11 @@ export const DynamicCard: React.FC<{ item: DashboardItem }> = ({ item }) => {
     if (item.type === "EXAM_FIREBASE") {
       setShowModal(true);
     } else if (item.type === "FOLDER" || item.type.includes("SECTION")) {
-      // 🔥 ক্লিক করলে সরাসরি ছোট ও সুন্দর /f/[slug] লিংকে প্রবেশ করবে
       const cleanSlug = createFolderSlug(item.title, rawCmd, item.slug);
       router.push(`/f/${encodeURIComponent(cleanSlug)}`);
     } else if (item.type === "NOTE_PDF" || item.type === "NOTE_SHEET") {
-      router.push(`/note/${encodeURIComponent(rawCmd)}?title=${encodeURIComponent(item.title)}&type=${item.type}`);
+      const noteSlug = createNoteSlug(item.title, rawCmd, null);
+      router.push(`/note/${encodeURIComponent(noteSlug)}?title=${encodeURIComponent(item.title)}&type=${item.type}`);
     } else if (item.type === "HTML_PAGE") {
       router.push(`/page/${encodeURIComponent(item.id)}?title=${encodeURIComponent(item.title)}`);
     } else if (item.type === "VIDEO_YOUTUBE") {
@@ -126,7 +143,7 @@ export const DynamicCard: React.FC<{ item: DashboardItem }> = ({ item }) => {
       <div
         onClick={handleClick}
         style={getCardStyle()}
-        className="group relative w-full h-full overflow-hidden cursor-pointer shadow-lg hover:shadow-cyan-500/20 hover:scale-[1.02] transition-all duration-200"
+        className="group relative w-full h-full overflow-hidden cursor-pointer shadow-lg hover:shadow-cyan-500/20 hover:scale-[1.02] active:scale-[0.96] transition-all duration-150 select-none"
       >
         {resolvedImageUrl ? (
           <img

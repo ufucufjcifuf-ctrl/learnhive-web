@@ -1,13 +1,13 @@
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { DashboardItem } from "@/types";
+import { createFolderSlug, createExamSlug, createNoteSlug, extractShortHash } from "@/lib/slugUtils";
 
 const CACHE_KEY = "mcqhub_cached_layout";
 const VERSION_KEY = "mcqhub_content_version";
 
-// 🔥 পুরোনো ফাইলের ব্যাকওয়ার্ড কম্প্যাটিবিলিটির জন্য সেফ নো-অপ এক্সপোর্ট
 export function cacheEmbeddedTree(items?: DashboardItem[]): void {
-  // সার্ভার প্রি-রেন্ডারিং চালু থাকায় ক্লায়েন্টে সেশনের প্রয়োজন নেই
+  // নো-অপ ফাংশন (ব্যাকওয়ার্ড কম্প্যাটিবিলিটির জন্য)
 }
 
 // হোম লেআউট ফেচ ও লোকাল সিঙ্ক
@@ -44,7 +44,7 @@ export async function getCachedHomeLayout(): Promise<DashboardItem[]> {
   }
 }
 
-// ফোল্ডারের আইটেম খোঁজার রিকার্সিভ হেল্পার (মেইন লেআউট স্ক্যানার)
+// ফোল্ডারের আইটেম খোঁজার রিকার্সিভ হেল্পার
 function findFolderInList(items: DashboardItem[], folderId: string): DashboardItem[] | null {
   for (const item of items) {
     const target = (item.command || item.id || "").trim();
@@ -61,20 +61,18 @@ function findFolderInList(items: DashboardItem[], folderId: string): DashboardIt
   return null;
 }
 
-// কন্টাক্ট পেজ বা ক্লায়েন্ট ফোল্ডার লোডার (সরাসরি ফায়ারস্টোর ও ক্যাশ ফলব্যাক)
+// কন্টাক্ট পেজ বা ক্লায়েন্ট ফোল্ডার লোডার
 export async function getFolderItems(folderId: string): Promise<DashboardItem[]> {
   if (!folderId) return [];
   const cleanId = folderId.trim();
 
   try {
-    // ১. প্রথমে সরাসরি লিংকড ফোল্ডার ডকুমেন্ট খোঁজা
     const folderDoc = await getDoc(doc(db, "configuration", cleanId));
     if (folderDoc.exists()) {
       const items: DashboardItem[] = folderDoc.data()?.items || [];
       return items.filter((it) => !it.isHidden);
     }
 
-    // ২. না পাওয়া গেলে লোকাল ক্যাশে থাকা মেইন লেআউট ট্রির ভেতর খোঁজা
     if (typeof window !== "undefined") {
       const cached = localStorage.getItem(CACHE_KEY);
       if (cached) {
@@ -84,7 +82,6 @@ export async function getFolderItems(folderId: string): Promise<DashboardItem[]>
       }
     }
 
-    // ৩. শেষ চেষ্টা: সরাসরি ফায়ারবেস মেইন লেআউট রিড করা
     const layoutDoc = await getDoc(doc(db, "configuration", "layout"));
     if (layoutDoc.exists()) {
       const rootItems: DashboardItem[] = layoutDoc.data()?.items || [];
@@ -96,4 +93,77 @@ export async function getFolderItems(folderId: string): Promise<DashboardItem[]>
   }
 
   return [];
+}
+
+// 🔥 যেকোনো স্লাগ বা আইডি দিয়ে লিংকড ফোল্ডারের গভীরেও আসল আইটেম খুঁজে বের করার ইউনিভার্সাল হেল্পার
+export async function findItemDeeply(identifier: string): Promise<DashboardItem | null> {
+  const target = decodeURIComponent(identifier).trim().toLowerCase();
+
+  const scanItemsAsync = async (list: DashboardItem[]): Promise<DashboardItem | null> => {
+    for (const it of list) {
+      const rawId = (it.command || it.id || "").trim().toLowerCase();
+      const customSlug = (it.slug || "").trim().toLowerCase();
+      const folderSlug = createFolderSlug(it.title, it.command || it.id, it.slug).toLowerCase();
+      const examSlug = createExamSlug(it.title, it.command || it.id, it.slug).toLowerCase();
+      const noteSlug = createNoteSlug(it.title, it.command || it.id, it.slug).toLowerCase();
+      const hash = extractShortHash(it.command || it.id);
+
+      if (
+        rawId === target ||
+        it.id.toLowerCase() === target ||
+        it.command?.toLowerCase() === target ||
+        customSlug === target ||
+        folderSlug === target ||
+        examSlug === target ||
+        noteSlug === target ||
+        (target.includes("-") && target.endsWith(`-${hash}`))
+      ) {
+        return it;
+      }
+
+      // ১. এমবেডেড সাব-আইটেম স্ক্যান
+      if (it.embeddedItems && it.embeddedItems.length > 0) {
+        const found = await scanItemsAsync(it.embeddedItems);
+        if (found) return found;
+      }
+
+      // ২. লিংকড ফোল্ডারের ভেতরের ফায়ারস্টোর সাব-ডকুমেন্ট স্ক্যান (যাতে সরাসরি শেয়ার করা লিঙ্ক মিস না হয়)
+      if (it.type === "FOLDER" && it.loadType === "LINKED" && it.command) {
+        try {
+          const subDoc = await getDoc(doc(db, "configuration", it.command));
+          if (subDoc.exists()) {
+            const subItems: DashboardItem[] = subDoc.data()?.items || [];
+            const foundInSub = await scanItemsAsync(subItems);
+            if (foundInSub) return foundInSub;
+          }
+        } catch (err) {
+          console.error("Linked folder deep scan error:", err);
+        }
+      }
+    }
+    return null;
+  };
+
+  // প্রথমে লোকাল ক্যাশ থেকে স্ক্যান
+  if (typeof window !== "undefined") {
+    const cached = localStorage.getItem(CACHE_KEY);
+    if (cached) {
+      try {
+        const parsed: DashboardItem[] = JSON.parse(cached);
+        const match = await scanItemsAsync(parsed);
+        if (match) return match;
+      } catch (e) {}
+    }
+  }
+
+  // ফায়ারবেস মেইন লেআউট থেকে স্ক্যান
+  try {
+    const layoutDoc = await getDoc(doc(db, "configuration", "layout"));
+    if (layoutDoc.exists()) {
+      const rootItems: DashboardItem[] = layoutDoc.data()?.items || [];
+      return await scanItemsAsync(rootItems);
+    }
+  } catch (e) {}
+
+  return null;
 }

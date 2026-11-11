@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { getCachedHomeLayout } from "@/lib/layoutService";
 import { searchItemsWithRanking } from "@/lib/searchService";
+import { createFolderSlug, createExamSlug, createNoteSlug } from "@/lib/slugUtils";
 import { DashboardItem } from "@/types";
 import { MathText } from "@/components/MathText";
 import { ArrowLeft, Search, Play, Folder, FileText, X, Share2 } from "lucide-react";
@@ -41,17 +42,22 @@ export default function SearchPage() {
 
     const rawCmd = item.command || item.id;
     if (item.type === "EXAM_FIREBASE") {
-      router.push(`/exam/${encodeURIComponent(rawCmd)}?title=${encodeURIComponent(item.title)}`);
+      const cleanSlug = createExamSlug(item.title, rawCmd, item.slug);
+      router.push(`/exam/${encodeURIComponent(cleanSlug)}?title=${encodeURIComponent(item.title)}`);
     } else if (item.type === "FOLDER" || item.type.includes("SECTION")) {
-      router.push(`/folder/${encodeURIComponent(rawCmd)}?title=${encodeURIComponent(item.title)}`);
+      const cleanSlug = createFolderSlug(item.title, rawCmd, item.slug);
+      router.push(`/f/${encodeURIComponent(cleanSlug)}`);
     } else if (item.type.startsWith("NOTE")) {
-      router.push(`/note/${encodeURIComponent(rawCmd)}?title=${encodeURIComponent(item.title)}&type=${item.type}`);
+      const noteSlug = createNoteSlug(item.title, rawCmd, null);
+      router.push(`/note/${encodeURIComponent(noteSlug)}?title=${encodeURIComponent(item.title)}&type=${item.type}`);
     }
   };
 
   const handleShareClick = (e: React.MouseEvent, item: DashboardItem) => {
     e.stopPropagation();
-    const targetSlug = item.slug?.trim() || item.command || item.id;
+    const rawCmd = item.command || item.id;
+    const cleanSlug = createExamSlug(item.title, rawCmd, item.slug);
+    const targetSlug = item.slug?.trim() || cleanSlug;
     const url = `${window.location.origin}/p/${encodeURIComponent(targetSlug)}`;
     
     if (navigator.share) {
@@ -184,7 +190,7 @@ export default function SearchPage() {
                 <div
                   key={item.id}
                   onClick={() => handleSearchClick(item)}
-                  className="bg-[#121218] border border-white/5 hover:border-cyan-500/40 p-4 rounded-2xl cursor-pointer flex items-center justify-between transition shadow-md"
+                  className="bg-[#121218] border border-white/5 hover:border-cyan-500/40 p-4 rounded-2xl cursor-pointer flex items-center justify-between transition shadow-md active:scale-[0.98]"
                 >
                   <div className="flex items-center gap-3 flex-1 pr-2">
                     <div className="p-2.5 rounded-xl bg-white/5 text-cyan-400 flex-shrink-0">

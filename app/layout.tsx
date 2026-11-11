@@ -1,3 +1,4 @@
+// FILE PATH: app/layout.tsx
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
@@ -5,6 +6,8 @@ import "katex/dist/katex.min.css";
 import { NetworkBanner } from "@/components/NetworkBanner";
 import { PWAInstallPrompt } from "@/components/PWAInstallPrompt";
 import { BottomNavBar } from "@/components/BottomNavBar";
+import { TopProgressBar } from "@/components/TopProgressBar";
+import { Suspense } from "react";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -30,7 +33,7 @@ export const metadata: Metadata = {
     template: "%s | Learn Hive",
   },
   description:
-    "বিসিএস, মেডিকেল, এইচএসসি ও এসএসসির পূর্ণাঙ্গ মডেল টেস্ট, নেগেটিভ মার্কিং সহ লাইভ ব্যাচ এক্সাম এবং তাৎক্ষণিক মেধা তালিকা।",
+    "বিসিএস, মেডিকেল, এইচএসসি ও এসএসসির পূর্ণাঙ্গ মডেল টেস্ট, নেগেティブ মার্কিং সহ লাইভ ব্যাচ এক্সাম এবং তাৎক্ষণিক মেধা তালিকা।",
   keywords: [
     "Learn Hive",
     "learnhive",
@@ -54,7 +57,6 @@ export const metadata: Metadata = {
     siteName: "Learn Hive",
     locale: "bn_BD",
     type: "website",
-    // 🔥 ভার্সেল ত্রিভুজ লোগো দূর করতে ব্র্যান্ডেড সোশ্যাল কার্ড ইমেজ সেট করা হলো
     images: [
       {
         url: "https://learnhive-web.vercel.app/api/og?title=Learn%20Hive%20Online%20Exam%20Platform&q=Model%20Test&t=Instant%20Rank",
@@ -87,6 +89,9 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-[#0A0A0E] text-white selection:bg-cyan-500 selection:text-black`}
       >
+        <Suspense fallback={null}>
+          <TopProgressBar />
+        </Suspense>
         <NetworkBanner />
         {children}
         <BottomNavBar />

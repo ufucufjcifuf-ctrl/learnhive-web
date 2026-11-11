@@ -1,4 +1,3 @@
-// ব্রাউজারে ফুলস্ক্রিন চালু করার ফাংশন
 export function enterFullScreen(): void {
   if (typeof document === "undefined") return;
   const docElm = document.documentElement as any;
@@ -13,7 +12,6 @@ export function enterFullScreen(): void {
   }
 }
 
-// ব্রাউজারের রাইট-ক্লিক ও কপি-কাট ব্লক করার ইভেন্ট লিসেনার
 export function enableExamAntiCheat(): () => void {
   if (typeof window === "undefined") return () => {};
 
@@ -23,16 +21,41 @@ export function enableExamAntiCheat(): () => void {
 
   const preventCopyPaste = (e: ClipboardEvent) => {
     e.preventDefault();
-    alert("⚠️ পরীক্ষার সময় প্রশ্ন কপি বা পেস্ট করা সম্পূর্ণ নিষিদ্ধ!");
+  };
+
+  const preventDevTools = (e: KeyboardEvent) => {
+    if (e.key === "F12") {
+      e.preventDefault();
+      e.stopPropagation();
+      return false;
+    }
+
+    if (
+      e.ctrlKey &&
+      e.shiftKey &&
+      (e.key === "I" || e.key === "i" || e.key === "J" || e.key === "j" || e.key === "C" || e.key === "c")
+    ) {
+      e.preventDefault();
+      e.stopPropagation();
+      return false;
+    }
+
+    if (e.ctrlKey && (e.key === "U" || e.key === "u")) {
+      e.preventDefault();
+      e.stopPropagation();
+      return false;
+    }
   };
 
   document.addEventListener("contextmenu", preventRightClick);
   document.addEventListener("copy", preventCopyPaste);
   document.addEventListener("cut", preventCopyPaste);
+  window.addEventListener("keydown", preventDevTools);
 
   return () => {
     document.removeEventListener("contextmenu", preventRightClick);
     document.removeEventListener("copy", preventCopyPaste);
     document.removeEventListener("cut", preventCopyPaste);
+    window.removeEventListener("keydown", preventDevTools);
   };
 }

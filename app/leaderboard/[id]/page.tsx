@@ -4,8 +4,10 @@ import React, { useEffect, useState } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { db } from "@/lib/firebase";
 import { doc, getDoc } from "firebase/firestore";
-import { ArrowLeft, Trophy, Medal, Award, Play } from "lucide-react";
+import { ArrowLeft, Trophy, Play } from "lucide-react";
 import Link from "next/link";
+import { findItemDeeply } from "@/lib/layoutService";
+import { createExamSlug } from "@/lib/slugUtils";
 
 interface LeaderboardEntry {
   userId: string;
@@ -21,16 +23,39 @@ export default function ExamSpecificLeaderboardPage() {
   const router = useRouter();
 
   const id = params?.id ? decodeURIComponent(String(params.id)) : "";
-  const title = searchParams.get("title") || "Exam Leaderboard";
+  const initialTitle = searchParams.get("title") || "Exam Leaderboard";
 
   const [topList, setTopList] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [examTitle, setExamTitle] = useState(initialTitle);
+  const [resolvedExamId, setResolvedExamId] = useState(id);
 
   useEffect(() => {
     async function loadLeaderboard() {
       if (!id) return;
+      setLoading(true);
+
       try {
-        const snap = await getDoc(doc(db, "public_leaderboards", id));
+        let canonicalId = id;
+
+        // 🔥 ডুয়াল-কী রেজোলিউশন: স্লাগ দিয়ে পেজে ঢুকলে আসল ফায়ারস্টোর আইডি বের করা
+        if (!id.startsWith("exam_") && !id.includes(":")) {
+          const matchedItem = await findItemDeeply(id);
+          if (matchedItem) {
+            canonicalId = matchedItem.command || matchedItem.id;
+            setExamTitle(matchedItem.title);
+            setResolvedExamId(canonicalId);
+          }
+        }
+
+        // ১. ফায়ারস্টোরের আসল আইডি দিয়ে চেক করা
+        let snap = await getDoc(doc(db, "public_leaderboards", canonicalId));
+
+        // ২. যদি না পায়, ফলব্যাক হিসেবে স্লাগ বা আইডি দিয়ে চেক করা
+        if (!snap.exists() && canonicalId !== id) {
+          snap = await getDoc(doc(db, "public_leaderboards", id));
+        }
+
         if (snap.exists()) {
           setTopList(snap.data()?.topList || []);
         } else {
@@ -42,6 +67,7 @@ export default function ExamSpecificLeaderboardPage() {
         setLoading(false);
       }
     }
+
     loadLeaderboard();
   }, [id]);
 
@@ -51,6 +77,8 @@ export default function ExamSpecificLeaderboardPage() {
     if (rank === 3) return { bg: "bg-amber-700 text-white", border: "border-amber-700/50", label: "🥉" };
     return { bg: "bg-white/10 text-gray-300", border: "border-transparent", label: `#${rank}` };
   };
+
+  const cleanExamSlug = createExamSlug(examTitle, resolvedExamId, null);
 
   return (
     <div className="min-h-screen bg-[#0A0A0E] text-white flex flex-col items-center p-4 md:p-6 selection:bg-cyan-500 selection:text-black">
@@ -64,14 +92,14 @@ export default function ExamSpecificLeaderboardPage() {
             </button>
             <div>
               <h1 className="font-extrabold text-base md:text-lg text-amber-400 flex items-center gap-2 line-clamp-1">
-                <Trophy size={20} /> {title}
+                <Trophy size={20} /> {examTitle}
               </h1>
               <p className="text-[11px] text-gray-400">এই পরীক্ষার সার্বিক মেধা তালিকা (Top Rankers)</p>
             </div>
           </div>
 
           <Link
-            href={`/exam/${encodeURIComponent(id)}?title=${encodeURIComponent(title)}`}
+            href={`/exam/${encodeURIComponent(cleanExamSlug)}?title=${encodeURIComponent(examTitle)}`}
             className="flex items-center gap-1.5 bg-cyan-500 hover:bg-cyan-400 text-black px-4 py-2 rounded-2xl text-xs font-black transition shadow-lg shadow-cyan-500/20"
           >
             <Play size={14} className="fill-black" /> পরীক্ষা দিন

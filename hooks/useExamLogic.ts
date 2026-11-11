@@ -9,12 +9,15 @@ import { syncUserGlobalScore } from "@/lib/scoreService";
 import { recordDailyActivity } from "@/lib/streakService";
 import { sounds } from "@/lib/soundEffects";
 import { shuffleArray } from "@/lib/utils";
+import { findItemDeeply } from "@/lib/layoutService";
+import { auth, db } from "@/lib/firebase";
+import { collection, addDoc } from "firebase/firestore";
 
 export function useExamLogic(id: string) {
   const searchParams = useSearchParams();
   const router = useRouter();
 
-  const examTitle = searchParams.get("title") || "Online Model Test";
+  const queryTitle = searchParams.get("title");
   const queryLimit = Number(searchParams.get("limit")) || -1;
   const queryDuration = Number(searchParams.get("duration")) || 0;
   const queryPos = searchParams.get("pos") ? Number(searchParams.get("pos")) : 1.0;
@@ -34,16 +37,17 @@ export function useExamLogic(id: string) {
   const [bookmarks, setBookmarks] = useState<Record<string, boolean>>({});
   const [timeLeft, setTimeLeft] = useState(15 * 60);
   const [submitted, setSubmitted] = useState(false);
+  const [examTitle, setExamTitle] = useState<string>(queryTitle || "Online Model Test");
+
+  const [canonicalExamId, setCanonicalExamId] = useState<string>(decodeURIComponent(id).trim());
 
   const [liveEndTime, setLiveEndTime] = useState<number | null>(paramLiveEnd);
   const [hideSolutionUntilLiveEnds, setHideSolutionUntilLiveEnds] = useState<boolean>(paramHideSolution);
 
   const isSubmittingRef = useRef(false);
-  const examStartTimeRef = useRef<number>(Date.now());
   const targetEndTimeRef = useRef<number>(Date.now() + 15 * 60 * 1000);
   const handleSubmitExamRef = useRef<() => void>(() => {});
 
-  // ব্রাউজার অ্যান্টি-চিট (রাইট-ক্লিক ও কপি-কাট ব্লক)
   useEffect(() => {
     if (!submitted) {
       const cleanup = enableExamAntiCheat();
@@ -51,7 +55,6 @@ export function useExamLogic(id: string) {
     }
   }, [submitted]);
 
-  // লোকালস্টোরেজ থেকে বুকমার্ক লোড করা
   useEffect(() => {
     if (typeof window !== "undefined") {
       const stored = localStorage.getItem("mcqhub_saved_questions_detail");
@@ -68,12 +71,11 @@ export function useExamLogic(id: string) {
     }
   }, []);
 
-  // এক্সামের প্রশ্নপত্র লোড করা
   useEffect(() => {
     async function fetchExam() {
       setLoading(true);
       try {
-        const decodedId = decodeURIComponent(id);
+        let decodedId = decodeURIComponent(id).trim();
 
         if (decodedId === "MISTAKE_REVISION") {
           const stored = sessionStorage.getItem("mcqhub_revision_questions");
@@ -82,29 +84,51 @@ export function useExamLogic(id: string) {
             setQuestions(list);
             const totalSec = list.length * 60;
             setTimeLeft(totalSec);
-            examStartTimeRef.current = Date.now();
             targetEndTimeRef.current = Date.now() + totalSec * 1000;
           }
           setLoading(false);
           return;
         }
 
+        let actualCommand = decodedId;
+        let configDuration: number = queryDuration;
+
+        if (!decodedId.startsWith("exam_") && !decodedId.includes(":") && !decodedId.includes(",")) {
+          const matchedItem = await findItemDeeply(decodedId);
+          if (matchedItem) {
+            actualCommand = matchedItem.command || matchedItem.id;
+            setCanonicalExamId(actualCommand);
+            if (!queryTitle) setExamTitle(matchedItem.title);
+            if (configDuration <= 0 && matchedItem.examConfig?.durationMinutes) {
+              configDuration = matchedItem.examConfig.durationMinutes;
+            }
+          }
+        } else {
+          setCanonicalExamId(actualCommand);
+        }
+
         let loadedQuestions: Question[] = [];
 
-        if (decodedId.startsWith("exam_")) {
+        if (actualCommand.startsWith("exam_")) {
           const { doc, getDoc } = await import("firebase/firestore");
-          const { db } = await import("@/lib/firebase");
-          const docSnap = await getDoc(doc(db, "exams", decodedId));
+          const { db: fireDb } = await import("@/lib/firebase");
+          const docSnap = await getDoc(doc(fireDb, "exams", actualCommand));
           if (docSnap.exists()) {
             const data = docSnap.data();
             loadedQuestions = data?.questions || [];
+            if (data?.title && !queryTitle) {
+              setExamTitle(data.title);
+            }
             if (data?.examConfig?.liveEndTimeMs) {
               setLiveEndTime(data.examConfig.liveEndTimeMs);
               setHideSolutionUntilLiveEnds(Boolean(data.examConfig.hideSolutionUntilLiveEnds));
             }
+            if (configDuration <= 0 && data?.examConfig?.durationMinutes) {
+              configDuration = Number(data.examConfig.durationMinutes);
+            }
           }
         } else {
-          const sheetParams = decodedId.split(",");
+          const sheetParams = actualCommand.split(",");
           for (const param of sheetParams) {
             const parts = param.trim().split("|LIMIT|");
             let pureSheetId = parts[0].trim();
@@ -141,16 +165,6 @@ export function useExamLogic(id: string) {
           setQuestions(loadedQuestions);
 
           if (typeof window !== "undefined") {
-            // 🔥 ফিক্স: শুরু হওয়ার আসল সময় রিলোড দিলেও যেন অক্ষুণ্ণ থাকে
-            const persistedStart = localStorage.getItem(`mcq_active_start_${decodedId}`);
-            if (persistedStart) {
-              examStartTimeRef.current = Number(persistedStart);
-            } else {
-              const now = Date.now();
-              examStartTimeRef.current = now;
-              localStorage.setItem(`mcq_active_start_${decodedId}`, String(now));
-            }
-
             const savedEnd = localStorage.getItem(`mcq_active_end_${decodedId}`);
             const savedAnswers = localStorage.getItem(`mcq_active_answers_${decodedId}`);
             if (savedAnswers) {
@@ -162,7 +176,7 @@ export function useExamLogic(id: string) {
               setTimeLeft(remaining);
               targetEndTimeRef.current = Number(savedEnd);
             } else {
-              const totalSec = queryDuration > 0 ? queryDuration * 60 : loadedQuestions.length * 60;
+              const totalSec = configDuration > 0 ? configDuration * 60 : loadedQuestions.length * 60;
               setTimeLeft(totalSec);
               const targetEnd = Date.now() + totalSec * 1000;
               targetEndTimeRef.current = targetEnd;
@@ -180,9 +194,8 @@ export function useExamLogic(id: string) {
     }
 
     if (id) fetchExam();
-  }, [id, queryDiff, queryShuffle, queryLimit, queryDuration]);
+  }, [id, queryTitle, queryDiff, queryShuffle, queryLimit, queryDuration]);
 
-  // অপশন সিলেক্ট হ্যান্ডলার
   const handleSelectOption = useCallback(
     (qIdx: number, optIdx: number) => {
       sounds.playClick();
@@ -200,13 +213,11 @@ export function useExamLogic(id: string) {
     [id]
   );
 
-  // ফ্ল্যাগ টগল
   const toggleFlag = useCallback((qIdx: number) => {
     sounds.playClick();
     setFlagged((p) => ({ ...p, [qIdx]: !p[qIdx] }));
   }, []);
 
-  // বুকমার্ক টগল ও লোকাল স্টোরেজ সিঙ্ক
   const toggleBookmark = useCallback((q: Question) => {
     sounds.playClick();
     setBookmarks((prev) => {
@@ -236,7 +247,6 @@ export function useExamLogic(id: string) {
     });
   }, []);
 
-  // স্কোর গণনা
   const calculateFinalScore = useCallback(() => {
     let correct = 0;
     let wrong = 0;
@@ -279,23 +289,8 @@ export function useExamLogic(id: string) {
     };
   }, [questions, answers, queryPos, queryNeg]);
 
-  // সাবমিট লজিক
-  const handleSubmitExam = useCallback(() => {
+  const handleSubmitExam = useCallback(async () => {
     if (isSubmittingRef.current) return;
-
-    // 🔥 ফিক্স: সঠিক শুরুর সময় দিয়ে অ্যান্টি-চিট ভ্যালিডেশন
-    const timeSpentMs = Date.now() - examStartTimeRef.current;
-    const answeredCount = Object.keys(answers).length;
-
-    if (answeredCount >= 5 && timeSpentMs < 5000) {
-      alert("⚠️ Security Alert: অস্বাভাবিক গতি সনাক্ত হয়েছে! পরীক্ষাটি বাতিল করা হলো।");
-      const decodedId = decodeURIComponent(id);
-      localStorage.removeItem(`mcq_active_start_${decodedId}`);
-      localStorage.removeItem(`mcq_active_end_${decodedId}`);
-      localStorage.removeItem(`mcq_active_answers_${decodedId}`);
-      router.push("/");
-      return;
-    }
 
     isSubmittingRef.current = true;
     setSubmitted(true);
@@ -310,7 +305,7 @@ export function useExamLogic(id: string) {
       const globalXP = res.correct * 1.0 - res.wrong * 0.25;
 
       saveExamHistory({
-        examId: decodedId,
+        examId: canonicalExamId,
         examTitle,
         score: res.score,
         totalQuestions: res.total,
@@ -324,6 +319,26 @@ export function useExamLogic(id: string) {
       recordDailyActivity();
 
       const safeLiveEndTime = liveEndTime ? liveEndTime + 300_000 : null;
+      const isLiveAttempt = Boolean(safeLiveEndTime && Date.now() <= safeLiveEndTime);
+
+      // 🔥 অ্যান্ড্রয়েডের মতো ফায়ারস্টোরে `exam_results` আপলোড নিশ্চিত করা হলো
+      if (!canonicalExamId.includes(",") && canonicalExamId !== "MISTAKE_REVISION") {
+        try {
+          const user = auth.currentUser;
+          await addDoc(collection(db, "exam_results"), {
+            userId: user ? user.uid : `web_guest_${Date.now()}`,
+            userName: user ? user.displayName || user.email || "Web Student" : "Web Student",
+            userPhoto: user?.photoURL || "",
+            examId: canonicalExamId,
+            score: res.score,
+            totalQuestions: res.total,
+            isLiveAttempt: isLiveAttempt,
+            timestamp: Date.now(),
+          });
+        } catch (err) {
+          console.error("Failed to upload exam_results from web:", err);
+        }
+      }
 
       const reviewPayload = {
         questions,
@@ -335,18 +350,21 @@ export function useExamLogic(id: string) {
       };
 
       sessionStorage.setItem(`mcqhub_review_${id}`, JSON.stringify(reviewPayload));
+      sessionStorage.setItem(`mcqhub_review_${canonicalExamId}`, JSON.stringify(reviewPayload));
       localStorage.setItem(`mcqhub_persisted_review_${decodedId}`, JSON.stringify(reviewPayload));
+      localStorage.setItem(`mcqhub_persisted_review_${canonicalExamId}`, JSON.stringify(reviewPayload));
 
       router.replace(
-        `/result?id=${encodeURIComponent(id)}&title=${encodeURIComponent(
-          examTitle
-        )}&score=${res.score.toFixed(2)}&correct=${res.correct}&wrong=${res.wrong}&skipped=${
-          res.skipped
-        }&total=${res.total}&xp=${globalXP.toFixed(2)}`
+        `/result?id=${encodeURIComponent(id)}&canonicalId=${encodeURIComponent(
+          canonicalExamId
+        )}&title=${encodeURIComponent(examTitle)}&score=${res.score.toFixed(2)}&correct=${
+          res.correct
+        }&wrong=${res.wrong}&skipped=${res.skipped}&total=${res.total}&xp=${globalXP.toFixed(2)}`
       );
     }
   }, [
     id,
+    canonicalExamId,
     examTitle,
     questions,
     answers,
@@ -356,12 +374,10 @@ export function useExamLogic(id: string) {
     router,
   ]);
 
-  // রেফ আপডেট (টাইমার যাতে answers পরিবর্তনের কারণে বারবার রিস্টার্ট না হয়)
   useEffect(() => {
     handleSubmitExamRef.current = handleSubmitExam;
   }, [handleSubmitExam]);
 
-  // 🔥 ফিক্সড টাইমার ইন্টারভাল (জিরো জিটার ও স্মুথ এক্সিকিউশন)
   useEffect(() => {
     if (loading || submitted || questions.length === 0) return;
 
@@ -388,6 +404,7 @@ export function useExamLogic(id: string) {
     timeLeft,
     submitted,
     examTitle,
+    canonicalExamId,
     liveEndTime,
     hideSolutionUntilLiveEnds,
     handleSelectOption,
