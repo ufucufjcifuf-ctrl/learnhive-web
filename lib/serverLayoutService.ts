@@ -1,12 +1,20 @@
 import { API_BASE_URL } from "@/lib/apiClient";
 import { createFolderSlug } from "@/lib/slugUtils";
 import { DashboardItem } from "@/types";
-import type { AppBundleResponse } from "@/lib/layoutService";
 
 export interface FolderResult {
   title: string;
   items: DashboardItem[];
   canonicalSlug: string;
+}
+
+export interface SitemapIndexItem {
+  id: string;
+  title: string;
+  type: string;
+  command: string;
+  slug: string | null;
+  timestamp: number;
 }
 
 export async function getServerHomeLayout(): Promise<DashboardItem[]> {
@@ -70,15 +78,16 @@ export async function getServerFolderData(rawIdentifier: string): Promise<Folder
   return { title: "Folder", items: [], canonicalSlug: identifier };
 }
 
-export async function getServerAppBundle(): Promise<AppBundleResponse | null> {
+export async function getServerSitemapIndex(): Promise<SitemapIndexItem[]> {
   try {
-    const res = await fetch(`${API_BASE_URL}/api/app-bundle`, {
-      next: { revalidate: 1800, tags: ["layout", "bundle"] },
+    const res = await fetch(`${API_BASE_URL}/api/sitemap-index`, {
+      next: { revalidate: 1800, tags: ["layout"] },
     });
-    if (!res.ok) return null;
-    return (await res.json()) as AppBundleResponse;
+    if (!res.ok) return [];
+    const data = (await res.json()) as { items?: SitemapIndexItem[] };
+    return data.items || [];
   } catch (e) {
-    console.error("Failed to fetch server app bundle:", e);
-    return null;
+    console.error("Failed to fetch server sitemap index:", e);
+    return [];
   }
 }

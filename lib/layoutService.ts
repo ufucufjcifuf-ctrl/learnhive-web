@@ -16,7 +16,7 @@ export interface AppBundleResponse {
   premiumConfig: PremiumConfig;
   homeItems: DashboardItem[];
   linkedFolders: Record<string, DashboardItem[]>;
-  searchIndex: DashboardItem[];
+  searchIndex?: DashboardItem[];
   assetMap: Record<string, string>;
 }
 
@@ -26,6 +26,34 @@ let lastBundleFetchMs = 0;
 
 export function cacheEmbeddedTree(_items?: DashboardItem[]): void {
   // Handled centrally by /api/app-bundle cache
+}
+
+function flattenSearchableTree(
+  homeItems: DashboardItem[],
+  linkedFolders: Record<string, DashboardItem[]>
+): DashboardItem[] {
+  const seen = new Set<string>();
+  const flat: DashboardItem[] = [];
+
+  const walk = (list: DashboardItem[]) => {
+    for (const item of list) {
+      if (item.isHidden || seen.has(item.id)) continue;
+      seen.add(item.id);
+      flat.push(item);
+      if (item.embeddedItems && item.embeddedItems.length > 0) {
+        walk(item.embeddedItems);
+      }
+    }
+  };
+
+  walk(homeItems);
+  for (const [scope, items] of Object.entries(linkedFolders)) {
+    if (scope !== "contact") {
+      walk(items);
+    }
+  }
+
+  return flat;
 }
 
 export async function getAppBundle(forceRefresh = false): Promise<AppBundleResponse | null> {
@@ -93,8 +121,11 @@ export async function getCachedHomeLayout(): Promise<DashboardItem[]> {
 
 export async function getAllSearchableItems(): Promise<DashboardItem[]> {
   const bundle = await getAppBundle();
-  if (bundle?.searchIndex && bundle.searchIndex.length > 0) {
-    return bundle.searchIndex.filter((it) => !it.isHidden);
+  if (bundle) {
+    if (bundle.searchIndex && bundle.searchIndex.length > 0) {
+      return bundle.searchIndex.filter((it) => !it.isHidden);
+    }
+    return flattenSearchableTree(bundle.homeItems || [], bundle.linkedFolders || {});
   }
   return getCachedHomeLayout();
 }
@@ -170,7 +201,7 @@ export async function findItemDeeply(identifier: string): Promise<DashboardItem 
   if (!target) return null;
 
   const bundle = await getAppBundle();
-  if (bundle?.searchIndex) {
+  if (bundle) {
     const matchInList = (list: DashboardItem[]): DashboardItem | null => {
       for (const it of list) {
         const rawId = (it.command || it.id || "").trim();
@@ -197,11 +228,12 @@ export async function findItemDeeply(identifier: string): Promise<DashboardItem 
       return null;
     };
 
-    const hit = matchInList(bundle.searchIndex);
+    const flattened = flattenSearchableTree(bundle.homeItems || [], bundle.linkedFolders || {});
+    const hit = matchInList(flattened);
     if (hit) return hit;
 
-    for (const folderList of Object.values(bundle.linkedFolders || {})) {
-      const hitContact = matchInList(folderList);
+    if (bundle.linkedFolders?.contact) {
+      const hitContact = matchInList(bundle.linkedFolders.contact);
       if (hitContact) return hitContact;
     }
   }

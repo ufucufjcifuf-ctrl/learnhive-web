@@ -1,42 +1,8 @@
 import { MetadataRoute } from "next";
-import { getServerAppBundle } from "@/lib/serverLayoutService";
+import { getServerSitemapIndex } from "@/lib/serverLayoutService";
 import { createExamSlug, createFolderSlug } from "@/lib/slugUtils";
-import { DashboardItem } from "@/types";
 
 export const revalidate = 3600;
-
-function collectRoutes(items: DashboardItem[]) {
-  const examSlugs: { slug: string; lastModified: Date }[] = [];
-  const folderSlugs: { slug: string; lastModified: Date }[] = [];
-
-  const walk = (list: DashboardItem[]) => {
-    for (const item of list) {
-      if (item.isHidden) continue;
-
-      const rawCmd = (item.command || item.id || "").trim();
-      const lastModified = new Date(item.timestamp || Date.now());
-
-      if (item.type === "EXAM_FIREBASE" && rawCmd) {
-        examSlugs.push({
-          slug: createExamSlug(item.title, rawCmd, item.slug),
-          lastModified,
-        });
-      } else if ((item.type === "FOLDER" || item.type.includes("SECTION")) && rawCmd) {
-        folderSlugs.push({
-          slug: createFolderSlug(item.title, rawCmd, item.slug),
-          lastModified,
-        });
-      }
-
-      if (item.embeddedItems && item.embeddedItems.length > 0) {
-        walk(item.embeddedItems);
-      }
-    }
-  };
-
-  walk(items);
-  return { examSlugs, folderSlugs };
-}
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const baseUrl = "https://learnhive-web.vercel.app";
@@ -54,37 +20,33 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const dynamicRoutes: MetadataRoute.Sitemap = [];
 
   try {
-    const bundle = await getServerAppBundle();
-    if (bundle) {
-      const allTrees: DashboardItem[] = [
-        ...(bundle.homeItems || []),
-        ...Object.entries(bundle.linkedFolders || {})
-          .filter(([scope]) => scope !== "contact")
-          .flatMap(([, items]) => items),
-      ];
+    const items = await getServerSitemapIndex();
+    const uniqueExams = new Set<string>();
+    const uniqueFolders = new Set<string>();
 
-      const { examSlugs, folderSlugs } = collectRoutes(allTrees);
-      const uniqueExams = new Set<string>();
-      const uniqueFolders = new Set<string>();
+    for (const item of items) {
+      const rawCmd = (item.command || item.id || "").trim();
+      if (!rawCmd) continue;
+      const lastModified = new Date(item.timestamp || Date.now());
 
-      for (const exam of examSlugs) {
-        if (!uniqueExams.has(exam.slug)) {
-          uniqueExams.add(exam.slug);
+      if (item.type === "EXAM_FIREBASE") {
+        const slug = createExamSlug(item.title, rawCmd, item.slug);
+        if (!uniqueExams.has(slug)) {
+          uniqueExams.add(slug);
           dynamicRoutes.push({
-            url: `${baseUrl}/p/${encodeURIComponent(exam.slug)}`,
-            lastModified: exam.lastModified,
+            url: `${baseUrl}/p/${encodeURIComponent(slug)}`,
+            lastModified,
             changeFrequency: "daily",
             priority: 0.9,
           });
         }
-      }
-
-      for (const folder of folderSlugs) {
-        if (!uniqueFolders.has(folder.slug)) {
-          uniqueFolders.add(folder.slug);
+      } else if (item.type === "FOLDER" || item.type.includes("SECTION")) {
+        const slug = createFolderSlug(item.title, rawCmd, item.slug);
+        if (!uniqueFolders.has(slug)) {
+          uniqueFolders.add(slug);
           dynamicRoutes.push({
-            url: `${baseUrl}/f/${encodeURIComponent(folder.slug)}`,
-            lastModified: folder.lastModified,
+            url: `${baseUrl}/f/${encodeURIComponent(slug)}`,
+            lastModified,
             changeFrequency: "weekly",
             priority: 0.85,
           });
