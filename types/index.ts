@@ -1,13 +1,22 @@
-export interface Question {
+export interface PublicQuestion {
   id: string;
   text: string;
   options: string[];
-  correctOptionIndex: number;
-  correctOptionIndices: number[];
-  explanation: string;
   customPositiveMark?: number | null;
   customNegativeMark?: number | null;
   difficulty: "A" | "B" | "C" | "D" | "NONE";
+}
+
+export interface AnswerEntry {
+  i: number;
+  c: number[];
+  e: string;
+}
+
+export interface Question extends PublicQuestion {
+  correctOptionIndex: number;
+  correctOptionIndices: number[];
+  explanation: string;
   timestamp?: number;
 }
 
@@ -16,6 +25,13 @@ export interface BackgroundConfig {
   colors: string[];
   gradientAngle?: number;
   isAnimated?: boolean;
+}
+
+export interface PaddingConfig {
+  start: number;
+  top: number;
+  end: number;
+  bottom: number;
 }
 
 export interface TextConfig {
@@ -31,6 +47,8 @@ export interface UiStyle {
   weight?: number | null;
   autoScrollDelay?: number;
   showDotIndicator?: boolean;
+  padding?: PaddingConfig;
+  margin?: PaddingConfig;
   shape?: string;
   cornerRadius?: number;
   borderWidth?: number;
@@ -103,21 +121,76 @@ export interface DashboardItem {
   cardDesign?: CardDesign | null;
   uiStyle?: UiStyle;
   uiAction?: UiAction;
+  displayMode?: string;
   isHidden: boolean;
   routineHtml?: string | null;
+  routineConfig?: Record<string, unknown> | null;
   adminNote?: string | null;
-
-  // 🔥 Android Parity Fields
   styleColor?: string;
   gradientEndColor?: string;
+  textAlignment?: string;
   badgeText?: string | null;
   badgeColor?: string | null;
-
-  // 🔥 Web SEO Fields
   seoTitle?: string | null;
   seoDescription?: string | null;
   slug?: string | null;
-
-  // 🔥 NEW: টাইপস্ক্রিপ্ট ফিক্স
   timestamp?: number;
+}
+
+export interface UserProfile {
+  uid: string;
+  name: string;
+  username: string;
+  email: string;
+  photoUrl?: string | null;
+  referralCode: string;
+  referredBy?: string;
+  isPremium: boolean;
+  premiumExpiry: number;
+  totalScore: number;
+  badges: string[];
+  isReferralClaimed: boolean;
+  isBanned?: boolean;
+  role?: string;
+}
+
+export interface AppMainConfig {
+  adsEnabled?: boolean;
+  bannerAdEnabled?: boolean;
+  interstitialAdEnabled?: boolean;
+  rewardedAdEnabled?: boolean;
+  maintenanceMode?: boolean;
+  minVersionCode?: number;
+  dailyQuote?: string;
+  referralRewardDaysReferrer?: number;
+  referralRewardDaysReferee?: number;
+  isReferralSystemEnabled?: boolean;
+  privacyPolicyUrl?: string;
+  rulesHtml?: string;
+}
+
+export interface PremiumPackage {
+  id: string;
+  title: string;
+  durationDays: number;
+  price: number;
+  features: string;
+  isPopular?: boolean;
+}
+
+export interface PremiumConfig {
+  instructions: string;
+  whatsappNumber: string;
+  facebookLink: string;
+  packages: PremiumPackage[];
+}
+
+export interface LeaderboardEntry {
+  userId: string;
+  name: string;
+  score: number;
+  rank: number;
+  photoUrl?: string | null;
+  timeTakenSec?: number;
+  roll?: string;
 }

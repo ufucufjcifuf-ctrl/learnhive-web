@@ -2,6 +2,7 @@
 
 import React from "react";
 import katex from "katex";
+import { sanitizeHtml } from "@/lib/sanitizeHtml";
 
 interface MathTextProps {
   text: string;
@@ -11,7 +12,6 @@ interface MathTextProps {
 export const MathText: React.FC<MathTextProps> = ({ text, className = "" }) => {
   if (!text) return null;
 
-  // টেক্সটকে %% দিয়ে ভাগ করা
   const parts = text.split("%%");
 
   return (
@@ -19,7 +19,6 @@ export const MathText: React.FC<MathTextProps> = ({ text, className = "" }) => {
       {parts.map((part, index) => {
         if (!part) return null;
 
-        // বিজোড় ইনডেক্সগুলো হলো LaTeX সমীকরণ
         if (index % 2 === 1) {
           try {
             const html = katex.renderToString(part.trim(), {
@@ -33,7 +32,7 @@ export const MathText: React.FC<MathTextProps> = ({ text, className = "" }) => {
                 dangerouslySetInnerHTML={{ __html: html }}
               />
             );
-          } catch (error) {
+          } catch {
             return (
               <span key={index} className="text-red-500 font-bold">
                 [Math Error]
@@ -42,15 +41,14 @@ export const MathText: React.FC<MathTextProps> = ({ text, className = "" }) => {
           }
         }
 
-        // জোড় ইনডেক্সগুলো সাধারণ টেক্সট
-        const formattedHtml = part
-          .replace(/\n/g, "<br/>")
-          .replace(/&nbsp;/g, "\u00A0");
+        const safeHtml = sanitizeHtml(
+          part.replace(/\n/g, "<br/>").replace(/&nbsp;/g, "\u00A0")
+        );
 
         return (
           <span
             key={index}
-            dangerouslySetInnerHTML={{ __html: formattedHtml }}
+            dangerouslySetInnerHTML={{ __html: safeHtml }}
           />
         );
       })}

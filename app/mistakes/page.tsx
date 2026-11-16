@@ -4,57 +4,104 @@ import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Question } from "@/types";
 import { MathText } from "@/components/MathText";
-import { ArrowLeft, BookOpen, Play, Trash2, CheckCircle2, RotateCcw, AlertTriangle } from "lucide-react";
+import { useAuth } from "@/lib/useAuth";
+import { apiFetch } from "@/lib/apiClient";
+import { ArrowLeft, BookOpen, Play, Trash2, CheckCircle2 } from "lucide-react";
 
 export default function MistakesPage() {
   const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
   const [mistakes, setMistakes] = useState<Question[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedLimit, setSelectedLimit] = useState(10);
+  const [autoRemove, setAutoRemove] = useState(true);
 
   useEffect(() => {
-    // লোকালস্টোরেজ থেকে জমানো ভুল প্রশ্নগুলো আনা
-    if (typeof window !== "undefined") {
-      const stored = localStorage.getItem("mcqhub_mistake_bank");
-      if (stored) {
-        try {
-          setMistakes(JSON.parse(stored));
-        } catch (e) {
-          console.error(e);
+    if (authLoading) return;
+
+    async function loadMistakes() {
+      let localList: Question[] = [];
+      if (typeof window !== "undefined") {
+        const stored = localStorage.getItem("mcqhub_mistake_bank");
+        if (stored) {
+          try {
+            localList = JSON.parse(stored) as Question[];
+          } catch {}
         }
       }
+
+      if (user) {
+        try {
+          const res = await apiFetch<{
+            success: boolean;
+            mistakes: { question_id: string; question_json: string }[];
+          }>("/api/user/mistakes", { requireAuth: true });
+
+          const mergedMap = new Map<string, Question>();
+          for (const q of localList) mergedMap.set(q.id, q);
+          for (const row of res.mistakes || []) {
+            try {
+              const parsed = JSON.parse(row.question_json) as Question;
+              mergedMap.set(parsed.id || row.question_id, parsed);
+            } catch {}
+          }
+          const merged = Array.from(mergedMap.values());
+          setMistakes(merged);
+          if (typeof window !== "undefined") {
+            localStorage.setItem("mcqhub_mistake_bank", JSON.stringify(merged));
+          }
+          setLoading(false);
+          return;
+        } catch {
+          // Fallback to local
+        }
+      }
+
+      setMistakes(localList);
       setLoading(false);
     }
-  }, []);
 
-  // মিসটেক ব্যাংক সম্পূর্ণ খালি করা
+    loadMistakes();
+  }, [user, authLoading]);
+
   const clearMistakes = () => {
     if (confirm("আপনি কি সমস্ত ভুল প্রশ্নের তালিকা মুছে ফেলতে চান?")) {
+      const ids = mistakes.map((m) => m.id);
       setMistakes([]);
       if (typeof window !== "undefined") {
         localStorage.removeItem("mcqhub_mistake_bank");
       }
+      if (user && ids.length > 0) {
+        apiFetch("/api/user/mistakes", {
+          method: "POST",
+          requireAuth: true,
+          body: { removeQuestionIds: ids },
+        }).catch(() => {});
+      }
     }
   };
 
-  // ভুল প্রশ্ন দিয়ে রিভিশন এক্সাম শুরু করা
   const startRevisionExam = () => {
     if (mistakes.length === 0) return;
     const questionsToRevise = mistakes.slice(0, selectedLimit);
     if (typeof window !== "undefined") {
       sessionStorage.setItem("mcqhub_revision_questions", JSON.stringify(questionsToRevise));
     }
-    router.push(`/exam/MISTAKE_REVISION?title=Mistake+Bank+Revision`);
+    router.push(
+      `/exam/MISTAKE_REVISION?title=Mistake+Bank+Revision&autoRemove=${autoRemove}`
+    );
   };
 
   return (
     <div className="min-h-screen bg-[#0A0A0E] text-white flex flex-col items-center p-4 md:p-6 selection:bg-cyan-500 selection:text-black">
       <div className="w-full max-w-2xl pb-24">
-        
-        {/* হেডার */}
         <div className="flex justify-between items-center mb-6 pb-4 border-b border-white/5">
           <div className="flex items-center gap-3">
-            <button onClick={() => router.back()} className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300">
+            <button
+              type="button"
+              onClick={() => router.back()}
+              className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300"
+            >
               <ArrowLeft size={18} />
             </button>
             <div>
@@ -67,6 +114,7 @@ export default function MistakesPage() {
 
           {mistakes.length > 0 && (
             <button
+              type="button"
               onClick={clearMistakes}
               className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1 font-bold p-2"
             >
@@ -89,38 +137,50 @@ export default function MistakesPage() {
           </div>
         ) : (
           <div className="flex flex-col gap-6">
-            
-            {/* রিভিশন এক্সাম স্টার্ট বক্স */}
-            <div className="bg-[#121218] border border-purple-500/30 rounded-3xl p-6 shadow-xl flex flex-col md:flex-row justify-between items-center gap-4">
-              <div>
-                <span className="text-xs font-bold text-purple-400 block mb-1">
-                  মোট ভুল জমেছে: {mistakes.length} টি
-                </span>
-                <p className="text-xs text-gray-300">এখনই একটি স্পেশাল রিভিশন টেস্ট দিয়ে ভুল শুধরে নিন।</p>
+            <div className="bg-[#121218] border border-purple-500/30 rounded-3xl p-6 shadow-xl flex flex-col gap-4">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div>
+                  <span className="text-xs font-bold text-purple-400 block mb-1">
+                    মোট ভুল জমেছে: {mistakes.length} টি
+                  </span>
+                  <p className="text-xs text-gray-300">
+                    এখনই একটি স্পেশাল রিভিশন টেস্ট দিয়ে ভুল শুধরে নিন।
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-3 w-full md:w-auto">
+                  <select
+                    value={selectedLimit}
+                    onChange={(e) => setSelectedLimit(Number(e.target.value))}
+                    className="bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-xs font-bold text-cyan-400 outline-none"
+                  >
+                    <option value={10}>১০টি প্রশ্ন</option>
+                    <option value={20}>২০টি প্রশ্ন</option>
+                    <option value={50}>৫০টি প্রশ্ন</option>
+                    <option value={mistakes.length}>সব প্রশ্ন</option>
+                  </select>
+
+                  <button
+                    type="button"
+                    onClick={startRevisionExam}
+                    className="flex-1 md:flex-initial flex items-center justify-center gap-2 bg-purple-500 hover:bg-purple-400 text-black font-extrabold px-5 py-2.5 rounded-xl text-xs transition shadow-lg shadow-purple-500/20"
+                  >
+                    <Play size={16} className="fill-black" /> রিভিশন দিন
+                  </button>
+                </div>
               </div>
 
-              <div className="flex items-center gap-3 w-full md:w-auto">
-                <select
-                  value={selectedLimit}
-                  onChange={(e) => setSelectedLimit(Number(e.target.value))}
-                  className="bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-xs font-bold text-cyan-400 outline-none"
-                >
-                  <option value={10}>১০টি প্রশ্ন</option>
-                  <option value={20}>২০টি প্রশ্ন</option>
-                  <option value={50}>৫০টি প্রশ্ন</option>
-                  <option value={mistakes.length}>সব প্রশ্ন</option>
-                </select>
-
-                <button
-                  onClick={startRevisionExam}
-                  className="flex-1 md:flex-initial flex items-center justify-center gap-2 bg-purple-500 hover:bg-purple-400 text-black font-extrabold px-5 py-2.5 rounded-xl text-xs transition shadow-lg shadow-purple-500/20"
-                >
-                  <Play size={16} className="fill-black" /> রিভিশন দিন
-                </button>
-              </div>
+              <label className="flex items-center justify-between pt-3 border-t border-white/5 text-xs text-gray-300 cursor-pointer">
+                <span>সঠিক উত্তর দিলে মিসটেক ব্যাংক থেকে অটো-মুছে যাবে</span>
+                <input
+                  type="checkbox"
+                  checked={autoRemove}
+                  onChange={(e) => setAutoRemove(e.target.checked)}
+                  className="accent-purple-400 w-4 h-4 cursor-pointer"
+                />
+              </label>
             </div>
 
-            {/* ভুল প্রশ্নের প্রিভিউ তালিকা */}
             <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">
               ভুল হওয়া প্রশ্নসমূহ ({mistakes.length})
             </h3>
@@ -141,7 +201,6 @@ export default function MistakesPage() {
                 </div>
               ))}
             </div>
-
           </div>
         )}
       </div>

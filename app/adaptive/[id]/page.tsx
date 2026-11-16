@@ -1,11 +1,13 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
-import { Question } from "@/types";
+import { AnswerEntry, PublicQuestion, Question } from "@/types";
 import { MathText } from "@/components/MathText";
 import { sounds } from "@/lib/soundEffects";
-import { ArrowLeft, Flame, CheckCircle2, XCircle } from "lucide-react";
+import { apiFetch, ApiError } from "@/lib/apiClient";
+import { auth } from "@/lib/firebase";
+import { ArrowLeft, Flame, CheckCircle2, XCircle, AlertTriangle } from "lucide-react";
 
 export default function AdaptivePracticePage() {
   const params = useParams();
@@ -16,6 +18,7 @@ export default function AdaptivePracticePage() {
   const title = searchParams.get("title") || "Smart AI Practice";
 
   const [loading, setLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [pools, setPools] = useState<{ A: Question[]; B: Question[]; C: Question[]; D: Question[] }>({
     A: [],
     B: [],
@@ -31,30 +34,31 @@ export default function AdaptivePracticePage() {
   const [totalCount, setTotalCount] = useState(0);
   const [consecutive, setConsecutive] = useState(0);
 
+  const qShownAtRef = useRef<number>(Date.now());
+
   useEffect(() => {
     async function loadQuestions() {
       try {
-        let all: Question[] = [];
+        const [qRes, solRes] = await Promise.all([
+          apiFetch<{ success: boolean; examId: string; questions: PublicQuestion[] }>(
+            `/api/exam/questions?id=${encodeURIComponent(id)}`,
+            { withOptionalAuth: true }
+          ),
+          apiFetch<{ success: boolean; answersMap: Record<string, AnswerEntry> }>(
+            `/api/exam/solutions?id=${encodeURIComponent(id)}`,
+            { withOptionalAuth: true }
+          ),
+        ]);
 
-        // 🔥 ফায়ারবেস এক্সাম ও গুগল শিট উভয় ডাটা সোর্স হ্যান্ডলিং
-        if (id.startsWith("exam_")) {
-          const { doc, getDoc } = await import("firebase/firestore");
-          const { db } = await import("@/lib/firebase");
-          const snap = await getDoc(doc(db, "exams", id));
-          if (snap.exists()) {
-            all = snap.data()?.questions || [];
-          }
-        } else {
-          let sheetId = id;
-          let tab = "Sheet1";
-          if (id.includes(":")) {
-            sheetId = id.split(":")[0];
-            tab = id.split(":")[1] || "Sheet1";
-          }
-          const res = await fetch(`/api/sheet?sheetId=${encodeURIComponent(sheetId)}&tab=${encodeURIComponent(tab)}`);
-          const json = await res.json();
-          all = json.data || [];
-        }
+        const all: Question[] = (qRes.questions || []).map((pq) => {
+          const ans = solRes.answersMap?.[pq.id];
+          return {
+            ...pq,
+            correctOptionIndex: ans?.i ?? -1,
+            correctOptionIndices: ans?.c ?? [],
+            explanation: ans?.e ?? "",
+          };
+        });
 
         const pA: Question[] = [];
         const pB: Question[] = [];
@@ -65,7 +69,7 @@ export default function AdaptivePracticePage() {
           if (q.difficulty === "A") pA.push(q);
           else if (q.difficulty === "C") pC.push(q);
           else if (q.difficulty === "D") pD.push(q);
-          else pB.push(q); // Medium & None
+          else pB.push(q);
         });
 
         pA.sort(() => Math.random() - 0.5);
@@ -76,8 +80,13 @@ export default function AdaptivePracticePage() {
         setPools({ A: pA, B: pB, C: pC, D: pD });
         const initial = pB.pop() || pA.pop() || pC.pop() || pD.pop() || null;
         setCurrentQ(initial);
-      } catch (e) {
-        console.error("Adaptive practice load error:", e);
+        qShownAtRef.current = Date.now();
+      } catch (e: unknown) {
+        if (e instanceof ApiError) {
+          setErrorMsg(e.message);
+        } else {
+          setErrorMsg("স্মার্ট প্র্যাকটিস লোড করা যায়নি।");
+        }
       } finally {
         setLoading(false);
       }
@@ -106,12 +115,15 @@ export default function AdaptivePracticePage() {
     }
 
     setCurrentQ(next);
+    qShownAtRef.current = Date.now();
   };
 
   const handleSelect = (idx: number) => {
     if (selectedOpt !== null || !currentQ) return;
     setSelectedOpt(idx);
     setTotalCount((p) => p + 1);
+
+    const timeTakenMs = Date.now() - qShownAtRef.current;
 
     const correctAnswers =
       currentQ.correctOptionIndices && currentQ.correctOptionIndices.length > 0
@@ -123,6 +135,19 @@ export default function AdaptivePracticePage() {
     const isBonus = (currentQ.options || []).length > 0 && correctAnswers.length === 0;
     const isCorrect = isBonus || correctAnswers.includes(idx);
 
+    if (auth.currentUser) {
+      apiFetch("/api/analytics/adaptive", {
+        method: "POST",
+        requireAuth: true,
+        body: {
+          examId: id,
+          difficulty: currentLevel,
+          isCorrect,
+          timeTakenMs,
+        },
+      }).catch(() => {});
+    }
+
     if (isCorrect) {
       sounds.playCorrect();
       setCorrectCount((p) => p + 1);
@@ -130,7 +155,6 @@ export default function AdaptivePracticePage() {
       const newConsecutive = consecutive + 1;
       setConsecutive(newConsecutive);
 
-      // পর পর ২টি সঠিক হলে কাঠিন্যের লেভেল বৃদ্ধি
       if (newConsecutive >= 2) {
         setConsecutive(0);
         const upMap: Record<string, "A" | "B" | "C" | "D"> = { A: "B", B: "C", C: "D", D: "D" };
@@ -142,7 +166,6 @@ export default function AdaptivePracticePage() {
       sounds.playWrong();
       setStreak(0);
       setConsecutive(0);
-      // ভুল হলে লেভেল ডাউন
       const downMap: Record<string, "A" | "B" | "C" | "D"> = { D: "C", C: "B", B: "A", A: "A" };
       setTimeout(() => loadNextQuestion(downMap[currentLevel]), 2500);
     }
@@ -164,11 +187,25 @@ export default function AdaptivePracticePage() {
     );
   }
 
+  if (errorMsg) {
+    return (
+      <div className="min-h-screen bg-[#0A0A0E] text-white flex flex-col items-center justify-center p-6 text-center">
+        <AlertTriangle size={36} className="text-red-400 mb-3" />
+        <p className="text-sm font-bold text-gray-200 mb-4">{errorMsg}</p>
+        <button
+          type="button"
+          onClick={() => router.back()}
+          className="bg-cyan-500 text-black font-extrabold px-5 py-2.5 rounded-xl text-xs"
+        >
+          ফিরে যান
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#0A0A0E] text-white flex flex-col items-center p-4 md:p-6 selection:bg-cyan-500 selection:text-black">
       <div className="w-full max-w-2xl pb-16">
-        
-        {/* টপ হেডার ও স্ট্যাটাস */}
         <div className="flex justify-between items-center mb-6 pb-4 border-b border-white/5">
           <div className="flex items-center gap-3">
             <button
@@ -200,7 +237,6 @@ export default function AdaptivePracticePage() {
           </div>
         </div>
 
-        {/* প্রশ্ন কার্ড */}
         {currentQ ? (
           <div className="bg-[#121218] border border-white/5 rounded-3xl p-6 md:p-8 shadow-xl">
             <div className="text-base md:text-lg font-bold text-gray-100 leading-relaxed">
@@ -240,8 +276,12 @@ export default function AdaptivePracticePage() {
                     <div className="flex-1 overflow-x-auto no-scrollbar">
                       <MathText text={opt} />
                     </div>
-                    {selectedOpt !== null && isCorrect && <CheckCircle2 size={18} className="text-emerald-400 flex-shrink-0" />}
-                    {selectedOpt !== null && isSelected && !isCorrect && <XCircle size={18} className="text-red-400 flex-shrink-0" />}
+                    {selectedOpt !== null && isCorrect && (
+                      <CheckCircle2 size={18} className="text-emerald-400 flex-shrink-0" />
+                    )}
+                    {selectedOpt !== null && isSelected && !isCorrect && (
+                      <XCircle size={18} className="text-red-400 flex-shrink-0" />
+                    )}
                   </button>
                 );
               })}
@@ -257,7 +297,9 @@ export default function AdaptivePracticePage() {
         ) : (
           <div className="bg-[#121218] border border-white/5 rounded-3xl p-10 text-center shadow-xl">
             <h2 className="text-xl font-bold text-emerald-400">অভিনন্দন! 🎉</h2>
-            <p className="text-xs text-gray-400 mt-2">আপনি এই অধ্যায়ের সব প্রশ্ন সফলভাবে অনুশীলন করেছেন।</p>
+            <p className="text-xs text-gray-400 mt-2">
+              আপনি এই অধ্যায়ের সব প্রশ্ন সফলভাবে অনুশীলন করেছেন।
+            </p>
           </div>
         )}
       </div>

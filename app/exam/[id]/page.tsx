@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useCallback, useMemo } from "react";
+import React, { useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ExamQuestionCard } from "@/components/exam/ExamQuestionCard";
 import { ExamOverviewModal, ExamConfirmSubmitModal, ExamExitModal } from "@/components/exam/ExamModals";
@@ -10,6 +10,7 @@ import { sounds } from "@/lib/soundEffects";
 import { useExamLogic } from "@/hooks/useExamLogic";
 import { ExamHeader } from "@/components/exam/ExamHeader";
 import { ExamResultCard } from "@/components/exam/ExamResultCard";
+import { getServerNow } from "@/lib/apiClient";
 import { Question } from "@/types";
 
 export default function ExamScreen() {
@@ -33,6 +34,7 @@ export default function ExamScreen() {
     toggleBookmark,
     handleSubmitExam,
     calculateFinalScore,
+    clearActiveExamSession,
   } = useExamLogic(id);
 
   const [currentIdx, setCurrentIdx] = useState(0);
@@ -42,12 +44,10 @@ export default function ExamScreen() {
   const [showExitModal, setShowExitModal] = useState(false);
   const [reportingQuestion, setReportingQuestion] = useState<Question | null>(null);
 
-  // লাইভ এক্সাম অ্যান্টি-চিট লক যাচাই
   const isSolutionLocked = Boolean(
-    hideSolutionUntilLiveEnds && liveEndTime && Date.now() < liveEndTime + 300_000
+    hideSolutionUntilLiveEnds && liveEndTime && getServerNow() < liveEndTime + 300_000
   );
 
-  // 🔥 ১০০% স্টেবল কলব্যাক ফাংশনস (যাতে মেমোইজেশন কার্ড কখনও অনর্থক রি-রেন্ডার না হয়)
   const onSelectHandler = useCallback(
     (index: number, optIdx: number) => {
       handleSelectOption(index, optIdx);
@@ -75,7 +75,7 @@ export default function ExamScreen() {
 
   const handleConfirmSubmit = useCallback(() => {
     setShowSubmitModal(false);
-    handleSubmitExam();
+    handleSubmitExam(false);
     if (typeof window !== "undefined") {
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
@@ -227,8 +227,7 @@ export default function ExamScreen() {
       <ExamExitModal
         isOpen={showExitModal}
         onConfirm={() => {
-          localStorage.removeItem(`mcq_active_end_${decodeURIComponent(id)}`);
-          localStorage.removeItem(`mcq_active_answers_${decodeURIComponent(id)}`);
+          clearActiveExamSession();
           router.push("/");
         }}
         onCancel={() => setShowExitModal(false)}
@@ -237,7 +236,7 @@ export default function ExamScreen() {
       {reportingQuestion && (
         <ReportModal
           question={reportingQuestion}
-          examId={id}
+          examId={String(id)}
           onClose={() => setReportingQuestion(null)}
         />
       )}

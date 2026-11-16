@@ -10,7 +10,22 @@ export function slugify(text: string): string {
     .replace(/-+$/, "");
 }
 
+// Deterministic FNV-1a 32-bit hash matching Cloudflare Worker (prevents Sheet-Tab collision)
+export function computeDeterministicHash(input: string): string {
+  if (!input) return "h00001";
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(36).padStart(6, "0");
+}
+
 export function extractShortHash(id: string): string {
+  return computeDeterministicHash(id);
+}
+
+export function extractLegacyShortHash(id: string): string {
   if (!id) return "h1";
   const clean = id
     .replace(/^(folder_|exam_|note_)/, "")
@@ -24,8 +39,7 @@ export function createFolderSlug(title: string, id: string, customSlug?: string 
     return slugify(customSlug.trim());
   }
   const baseSlug = slugify(title) || "folder";
-  const hash = extractShortHash(id);
-  return `${baseSlug}-${hash}`;
+  return `${baseSlug}-${computeDeterministicHash(id)}`;
 }
 
 export function createExamSlug(title: string, id: string, customSlug?: string | null): string {
@@ -33,8 +47,7 @@ export function createExamSlug(title: string, id: string, customSlug?: string | 
     return slugify(customSlug.trim());
   }
   const baseSlug = slugify(title) || "exam";
-  const hash = extractShortHash(id);
-  return `${baseSlug}-${hash}`;
+  return `${baseSlug}-${computeDeterministicHash(id)}`;
 }
 
 export function createNoteSlug(title: string, id: string, customSlug?: string | null): string {
@@ -42,6 +55,5 @@ export function createNoteSlug(title: string, id: string, customSlug?: string | 
     return slugify(customSlug.trim());
   }
   const baseSlug = slugify(title) || "note";
-  const hash = extractShortHash(id);
-  return `${baseSlug}-${hash}`;
+  return `${baseSlug}-${computeDeterministicHash(id)}`;
 }

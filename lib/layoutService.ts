@@ -1,50 +1,127 @@
-import { doc, getDoc } from "firebase/firestore";
-import { db } from "@/lib/firebase";
-import { DashboardItem } from "@/types";
-import { createFolderSlug, createExamSlug, createNoteSlug, extractShortHash } from "@/lib/slugUtils";
+import { apiFetch } from "@/lib/apiClient";
+import { seedAssetImagesCache } from "@/lib/imageService";
+import {
+  computeDeterministicHash,
+  createExamSlug,
+  createFolderSlug,
+  createNoteSlug,
+  extractLegacyShortHash,
+} from "@/lib/slugUtils";
+import { AppMainConfig, DashboardItem, PremiumConfig } from "@/types";
 
-const CACHE_KEY = "mcqhub_cached_layout";
-const VERSION_KEY = "mcqhub_content_version";
-
-export function cacheEmbeddedTree(items?: DashboardItem[]): void {
-  // নো-অপ ফাংশন (ব্যাকওয়ার্ড কম্প্যাটিবিলিটির জন্য)
+export interface AppBundleResponse {
+  success: boolean;
+  contentVersion: number;
+  mainConfig: AppMainConfig;
+  premiumConfig: PremiumConfig;
+  homeItems: DashboardItem[];
+  linkedFolders: Record<string, DashboardItem[]>;
+  searchIndex: DashboardItem[];
+  assetMap: Record<string, string>;
 }
 
-// হোম লেআউট ফেচ ও লোকাল সিঙ্ক
-export async function getCachedHomeLayout(): Promise<DashboardItem[]> {
-  try {
-    const syncDoc = await getDoc(doc(db, "configuration", "sync_info"));
-    const serverVersion = syncDoc.exists() ? syncDoc.data()?.contentVersion || 1 : 1;
-    const localVersion = typeof window !== "undefined" ? localStorage.getItem(VERSION_KEY) : null;
-    const cachedData = typeof window !== "undefined" ? localStorage.getItem(CACHE_KEY) : null;
+const BUNDLE_CACHE_KEY = "learnhive_app_bundle_v2";
+let inflightBundle: Promise<AppBundleResponse | null> | null = null;
+let lastBundleFetchMs = 0;
 
-    if (localVersion === String(serverVersion) && cachedData) {
-      return JSON.parse(cachedData);
+export function cacheEmbeddedTree(_items?: DashboardItem[]): void {
+  // Handled centrally by /api/app-bundle cache
+}
+
+export async function getAppBundle(forceRefresh = false): Promise<AppBundleResponse | null> {
+  if (typeof window !== "undefined" && !forceRefresh && Date.now() - lastBundleFetchMs < 60_000) {
+    const raw = localStorage.getItem(BUNDLE_CACHE_KEY);
+    if (raw) {
+      try {
+        return JSON.parse(raw) as AppBundleResponse;
+      } catch {
+        // Continue to network fetch
+      }
     }
+  }
 
-    const layoutDoc = await getDoc(doc(db, "configuration", "layout"));
-    if (layoutDoc.exists()) {
-      const items: DashboardItem[] = layoutDoc.data()?.items || [];
+  if (inflightBundle && !forceRefresh) return inflightBundle;
+
+  inflightBundle = apiFetch<AppBundleResponse>("/api/app-bundle", { cache: "no-store" })
+    .then((bundle) => {
+      if (bundle && bundle.success && typeof window !== "undefined") {
+        lastBundleFetchMs = Date.now();
+        try {
+          localStorage.setItem(BUNDLE_CACHE_KEY, JSON.stringify(bundle));
+        } catch {
+          // Ignore quota error
+        }
+        if (bundle.assetMap) {
+          seedAssetImagesCache(bundle.assetMap);
+        }
+      }
+      return bundle;
+    })
+    .catch((err) => {
+      console.error("Failed to fetch app bundle:", err);
       if (typeof window !== "undefined") {
-        localStorage.setItem(CACHE_KEY, JSON.stringify(items));
-        localStorage.setItem(VERSION_KEY, String(serverVersion));
+        const raw = localStorage.getItem(BUNDLE_CACHE_KEY);
+        if (raw) {
+          try {
+            return JSON.parse(raw) as AppBundleResponse;
+          } catch {
+            return null;
+          }
+        }
       }
-      return items;
-    }
-    return [];
-  } catch (error) {
-    console.error("Error loading layout:", error);
-    if (typeof window !== "undefined") {
-      const fallback = localStorage.getItem(CACHE_KEY);
-      if (fallback) {
-        return JSON.parse(fallback);
-      }
-    }
+      return null;
+    })
+    .finally(() => {
+      inflightBundle = null;
+    });
+
+  return inflightBundle;
+}
+
+export async function getCachedHomeLayout(): Promise<DashboardItem[]> {
+  const bundle = await getAppBundle();
+  if (bundle?.homeItems) {
+    return bundle.homeItems.filter((it) => !it.isHidden);
+  }
+  try {
+    const res = await apiFetch<{ success: boolean; items: DashboardItem[] }>("/api/layout?docId=layout");
+    return (res.items || []).filter((it) => !it.isHidden);
+  } catch {
     return [];
   }
 }
 
-// ফোল্ডারের আইটেম খোঁজার রিকার্সিভ হেল্পার
+export async function getAllSearchableItems(): Promise<DashboardItem[]> {
+  const bundle = await getAppBundle();
+  if (bundle?.searchIndex && bundle.searchIndex.length > 0) {
+    return bundle.searchIndex.filter((it) => !it.isHidden);
+  }
+  return getCachedHomeLayout();
+}
+
+export async function getPublicConfigs(): Promise<{
+  main: AppMainConfig;
+  premium: PremiumConfig;
+}> {
+  try {
+    const res = await apiFetch<{ success: boolean; main: AppMainConfig; premium: PremiumConfig }>(
+      "/api/config/public"
+    );
+    return { main: res.main || {}, premium: res.premium || {} };
+  } catch {
+    const bundle = await getAppBundle();
+    return {
+      main: bundle?.mainConfig || {},
+      premium: bundle?.premiumConfig || {
+        instructions: "",
+        whatsappNumber: "",
+        facebookLink: "",
+        packages: [],
+      },
+    };
+  }
+}
+
 function findFolderInList(items: DashboardItem[], folderId: string): DashboardItem[] | null {
   for (const item of items) {
     const target = (item.command || item.id || "").trim();
@@ -61,109 +138,80 @@ function findFolderInList(items: DashboardItem[], folderId: string): DashboardIt
   return null;
 }
 
-// কন্টাক্ট পেজ বা ক্লায়েন্ট ফোল্ডার লোডার
 export async function getFolderItems(folderId: string): Promise<DashboardItem[]> {
   if (!folderId) return [];
   const cleanId = folderId.trim();
 
-  try {
-    const folderDoc = await getDoc(doc(db, "configuration", cleanId));
-    if (folderDoc.exists()) {
-      const items: DashboardItem[] = folderDoc.data()?.items || [];
-      return items.filter((it) => !it.isHidden);
+  const bundle = await getAppBundle();
+  if (bundle) {
+    if (bundle.linkedFolders?.[cleanId]) {
+      return bundle.linkedFolders[cleanId].filter((it) => !it.isHidden);
     }
-
-    if (typeof window !== "undefined") {
-      const cached = localStorage.getItem(CACHE_KEY);
-      if (cached) {
-        const parsed: DashboardItem[] = JSON.parse(cached);
-        const match = findFolderInList(parsed, cleanId);
-        if (match) return match;
-      }
+    const inHome = findFolderInList(bundle.homeItems || [], cleanId);
+    if (inHome) return inHome;
+    for (const list of Object.values(bundle.linkedFolders || {})) {
+      const found = findFolderInList(list, cleanId);
+      if (found) return found;
     }
-
-    const layoutDoc = await getDoc(doc(db, "configuration", "layout"));
-    if (layoutDoc.exists()) {
-      const rootItems: DashboardItem[] = layoutDoc.data()?.items || [];
-      const match = findFolderInList(rootItems, cleanId);
-      if (match) return match;
-    }
-  } catch (e) {
-    console.error("Failed to load folder items on client:", e);
   }
 
-  return [];
+  try {
+    const res = await apiFetch<{ success: boolean; items: DashboardItem[] }>(
+      `/api/layout?docId=${encodeURIComponent(cleanId)}`
+    );
+    return (res.items || []).filter((it) => !it.isHidden);
+  } catch {
+    return [];
+  }
 }
 
-// 🔥 যেকোনো স্লাগ বা আইডি দিয়ে লিংকড ফোল্ডারের গভীরেও আসল আইটেম খুঁজে বের করার ইউনিভার্সাল হেল্পার
 export async function findItemDeeply(identifier: string): Promise<DashboardItem | null> {
   const target = decodeURIComponent(identifier).trim().toLowerCase();
+  if (!target) return null;
 
-  const scanItemsAsync = async (list: DashboardItem[]): Promise<DashboardItem | null> => {
-    for (const it of list) {
-      const rawId = (it.command || it.id || "").trim().toLowerCase();
-      const customSlug = (it.slug || "").trim().toLowerCase();
-      const folderSlug = createFolderSlug(it.title, it.command || it.id, it.slug).toLowerCase();
-      const examSlug = createExamSlug(it.title, it.command || it.id, it.slug).toLowerCase();
-      const noteSlug = createNoteSlug(it.title, it.command || it.id, it.slug).toLowerCase();
-      const hash = extractShortHash(it.command || it.id);
+  const bundle = await getAppBundle();
+  if (bundle?.searchIndex) {
+    const matchInList = (list: DashboardItem[]): DashboardItem | null => {
+      for (const it of list) {
+        const rawId = (it.command || it.id || "").trim();
+        const customSlug = (it.slug || "").trim().toLowerCase();
+        const folderSlug = createFolderSlug(it.title, rawId, it.slug).toLowerCase();
+        const examSlug = createExamSlug(it.title, rawId, it.slug).toLowerCase();
+        const noteSlug = createNoteSlug(it.title, rawId, it.slug).toLowerCase();
+        const detHash = computeDeterministicHash(rawId);
+        const legHash = extractLegacyShortHash(rawId);
 
-      if (
-        rawId === target ||
-        it.id.toLowerCase() === target ||
-        it.command?.toLowerCase() === target ||
-        customSlug === target ||
-        folderSlug === target ||
-        examSlug === target ||
-        noteSlug === target ||
-        (target.includes("-") && target.endsWith(`-${hash}`))
-      ) {
-        return it;
-      }
-
-      // ১. এমবেডেড সাব-আইটেম স্ক্যান
-      if (it.embeddedItems && it.embeddedItems.length > 0) {
-        const found = await scanItemsAsync(it.embeddedItems);
-        if (found) return found;
-      }
-
-      // ২. লিংকড ফোল্ডারের ভেতরের ফায়ারস্টোর সাব-ডকুমেন্ট স্ক্যান (যাতে সরাসরি শেয়ার করা লিঙ্ক মিস না হয়)
-      if (it.type === "FOLDER" && it.loadType === "LINKED" && it.command) {
-        try {
-          const subDoc = await getDoc(doc(db, "configuration", it.command));
-          if (subDoc.exists()) {
-            const subItems: DashboardItem[] = subDoc.data()?.items || [];
-            const foundInSub = await scanItemsAsync(subItems);
-            if (foundInSub) return foundInSub;
-          }
-        } catch (err) {
-          console.error("Linked folder deep scan error:", err);
+        if (
+          rawId.toLowerCase() === target ||
+          it.id.toLowerCase() === target ||
+          (it.command && it.command.toLowerCase() === target) ||
+          customSlug === target ||
+          folderSlug === target ||
+          examSlug === target ||
+          noteSlug === target ||
+          (target.includes("-") && (target.endsWith(`-${detHash}`) || target.endsWith(`-${legHash}`)))
+        ) {
+          return it;
         }
       }
-    }
-    return null;
-  };
+      return null;
+    };
 
-  // প্রথমে লোকাল ক্যাশ থেকে স্ক্যান
-  if (typeof window !== "undefined") {
-    const cached = localStorage.getItem(CACHE_KEY);
-    if (cached) {
-      try {
-        const parsed: DashboardItem[] = JSON.parse(cached);
-        const match = await scanItemsAsync(parsed);
-        if (match) return match;
-      } catch (e) {}
+    const hit = matchInList(bundle.searchIndex);
+    if (hit) return hit;
+
+    for (const folderList of Object.values(bundle.linkedFolders || {})) {
+      const hitContact = matchInList(folderList);
+      if (hitContact) return hitContact;
     }
   }
 
-  // ফায়ারবেস মেইন লেআউট থেকে স্ক্যান
   try {
-    const layoutDoc = await getDoc(doc(db, "configuration", "layout"));
-    if (layoutDoc.exists()) {
-      const rootItems: DashboardItem[] = layoutDoc.data()?.items || [];
-      return await scanItemsAsync(rootItems);
-    }
-  } catch (e) {}
-
-  return null;
+    const res = await apiFetch<{ success: boolean; item: DashboardItem }>(
+      `/api/resolve/${encodeURIComponent(identifier)}`
+    );
+    return res.item || null;
+  } catch {
+    return null;
+  }
 }

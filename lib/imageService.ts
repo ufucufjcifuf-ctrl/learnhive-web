@@ -1,16 +1,30 @@
-import { db } from "@/lib/firebase";
-import { doc, getDoc } from "firebase/firestore";
+import { API_BASE_URL } from "@/lib/apiClient";
 
 const IMAGE_CACHE_KEY = "mcqhub_asset_images_map";
 
-// ফায়ারবেস admin_assets/global_data থেকে সব ছবির লিঙ্ক আনা
+export function seedAssetImagesCache(map: Record<string, string>): void {
+  if (typeof window === "undefined" || !map) return;
+  try {
+    const normalized: Record<string, string> = {};
+    for (const [k, v] of Object.entries(map)) {
+      if (k && v) normalized[k.trim().toLowerCase()] = v.trim();
+    }
+    localStorage.setItem(IMAGE_CACHE_KEY, JSON.stringify(normalized));
+  } catch {
+    // Ignore quota errors
+  }
+}
+
 export async function syncAssetImages(): Promise<Record<string, string>> {
   if (typeof window === "undefined") return {};
 
   try {
-    const snap = await getDoc(doc(db, "admin_assets", "global_data"));
-    if (snap.exists()) {
-      const rawList: any[] = snap.data()?.images || [];
+    const res = await fetch(`${API_BASE_URL}/api/media/assets`);
+    if (res.ok) {
+      const json = (await res.json()) as {
+        images?: { imageName?: string; imageUrl?: string }[];
+      };
+      const rawList = json.images || [];
       const map: Record<string, string> = {};
 
       rawList.forEach((img) => {
@@ -27,28 +41,34 @@ export async function syncAssetImages(): Promise<Record<string, string>> {
   }
 
   const fallback = localStorage.getItem(IMAGE_CACHE_KEY);
-  return fallback ? JSON.parse(fallback) : {};
+  return fallback ? (JSON.parse(fallback) as Record<string, string>) : {};
 }
 
-// ছবির নাম বা লিংক থেকে ১০০% সঠিক ওয়েব লিংক বের করার ফাংশন
 export function getSmartImageUrl(imageNameOrUrl?: string | null): string | null {
   if (!imageNameOrUrl) return null;
   const path = imageNameOrUrl.trim();
+  if (!path) return null;
 
-  // ১. যদি সরাসরি http বা https লিংক হয়
   if (path.startsWith("http://") || path.startsWith("https://")) {
     return path;
   }
 
-  // ২. যদি শুধু ছবির নাম হয় (যেমন: hsc_science), লোকাল ক্যাশ থেকে গিটহাব লিংক নেওয়া
+  if (path.startsWith("/media/")) {
+    return `${API_BASE_URL}${path}`;
+  }
+
   if (typeof window !== "undefined") {
     const cached = localStorage.getItem(IMAGE_CACHE_KEY);
     if (cached) {
       try {
-        const map: Record<string, string> = JSON.parse(cached);
+        const map = JSON.parse(cached) as Record<string, string>;
         const resolved = map[path.toLowerCase()];
-        if (resolved) return resolved;
-      } catch (e) {}
+        if (resolved) {
+          return resolved.startsWith("/media/") ? `${API_BASE_URL}${resolved}` : resolved;
+        }
+      } catch {
+        // Ignore parse error
+      }
     }
   }
 

@@ -2,10 +2,9 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
-import { db, auth } from "@/lib/firebase";
-import { collection, addDoc, query, where, getDocs } from "firebase/firestore";
-import { Question } from "@/types";
+import { ExamConfig, LeaderboardEntry, PublicQuestion, Question } from "@/types";
 import { recordDailyActivity } from "@/lib/streakService";
+import { apiFetch } from "@/lib/apiClient";
 import { ExamQuestionCard } from "@/components/exam/ExamQuestionCard";
 import { LiveJoinCard } from "@/components/live/LiveJoinCard";
 import { LiveMeritTable, MeritItem } from "@/components/live/LiveMeritTable";
@@ -36,6 +35,7 @@ export default function BatchLiveExamPage() {
   const [meritList, setMeritList] = useState<MeritItem[]>([]);
   const [loadingMerit, setLoadingMerit] = useState(false);
   const isSubmittingRef = useRef(false);
+  const examStartTimeRef = useRef<number>(Date.now());
 
   useEffect(() => {
     async function loadBatchQuestions() {
@@ -43,33 +43,27 @@ export default function BatchLiveExamPage() {
       setLoadingQuestions(true);
 
       try {
-        const baseExamId = id.includes("_batch_") ? id.substring(0, id.indexOf("_batch_")) : id;
+        const res = await apiFetch<{
+          success: boolean;
+          config?: Partial<ExamConfig>;
+          questions: PublicQuestion[];
+        }>(`/api/exam/questions?id=${encodeURIComponent(id)}`, {
+          withOptionalAuth: true,
+        });
 
-        if (baseExamId.startsWith("exam_")) {
-          const { doc, getDoc } = await import("firebase/firestore");
-          const snap = await getDoc(doc(db, "exams", baseExamId));
-          if (snap.exists()) {
-            const list = snap.data()?.questions || [];
-            setQuestions(list);
-            const duration = list.length * 60;
-            setTimeLeft(duration);
-            setTotalDuration(duration);
-          }
-        } else {
-          let sheetId = baseExamId;
-          let tab = "Sheet1";
-          if (baseExamId.includes(":")) {
-            sheetId = baseExamId.split(":")[0];
-            tab = baseExamId.split(":")[1] || "Sheet1";
-          }
-          const res = await fetch(`/api/sheet?sheetId=${encodeURIComponent(sheetId)}&tab=${encodeURIComponent(tab)}`);
-          const json = await res.json();
-          if (json.data && json.data.length > 0) {
-            setQuestions(json.data);
-            const duration = json.data.length * 60;
-            setTimeLeft(duration);
-            setTotalDuration(duration);
-          }
+        const list: Question[] = (res.questions || []).map((pq) => ({
+          ...pq,
+          correctOptionIndex: -1,
+          correctOptionIndices: [],
+          explanation: "",
+        }));
+
+        if (list.length > 0) {
+          setQuestions(list);
+          const cfgMin = res.config?.durationMinutes || 0;
+          const duration = cfgMin > 0 ? cfgMin * 60 : list.length * 60;
+          setTimeLeft(duration);
+          setTotalDuration(duration);
         }
       } catch (err) {
         console.error("Batch exam load failed:", err);
@@ -94,40 +88,19 @@ export default function BatchLiveExamPage() {
     return () => document.removeEventListener("visibilitychange", handleVisibility);
   }, [joined, submitted]);
 
-  useEffect(() => {
-    if (!joined || submitted || questions.length === 0) return;
-
-    const timer = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          setTimeout(() => handleSubmitExam(), 0);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [joined, submitted, questions.length]);
-
   const loadMeritList = useCallback(async () => {
     setLoadingMerit(true);
     try {
-      const q = query(collection(db, "exam_results"), where("examId", "==", id));
-      const snap = await getDocs(q);
-      const list: MeritItem[] = [];
-      snap.forEach((d) => {
-        const data = d.data();
-        list.push({
-          name: data.userName || data.studentName || "Unknown",
-          roll: data.roll || "N/A",
-          score: Number(data.score) || 0,
-          timeTakenSec: Number(data.timeTakenSec) || 0,
-        });
-      });
-
-      list.sort((a, b) => b.score - a.score || a.timeTakenSec - b.timeTakenSec);
+      const res = await apiFetch<{ success: boolean; topList: LeaderboardEntry[] }>(
+        `/api/leaderboard?examId=${encodeURIComponent(id)}&mode=LIVE_ONLY`,
+        { cache: "no-store" }
+      );
+      const list: MeritItem[] = (res.topList || []).map((entry) => ({
+        name: entry.name || "Unknown",
+        roll: entry.roll || "N/A",
+        score: Number(entry.score) || 0,
+        timeTakenSec: Number(entry.timeTakenSec) || 0,
+      }));
       setMeritList(list);
     } catch (e) {
       console.error("Merit list error:", e);
@@ -136,70 +109,63 @@ export default function BatchLiveExamPage() {
     }
   }, [id]);
 
-  const handleSubmitExam = useCallback(async () => {
-    if (isSubmittingRef.current) return;
-    isSubmittingRef.current = true;
+  const handleSubmitExam = useCallback(
+    async (fromTimer = false) => {
+      if (isSubmittingRef.current) return;
 
-    setSubmitted(true);
-
-    let correct = 0;
-    let wrong = 0;
-    let score = 0;
-
-    questions.forEach((q, idx) => {
-      const selected = answers[idx];
-      const pos = q.customPositiveMark ?? 1.0;
-      const neg = q.customNegativeMark ?? 0.25;
-
-      const correctAnswers =
-        q.correctOptionIndices && q.correctOptionIndices.length > 0
-          ? q.correctOptionIndices
-          : q.correctOptionIndex !== -1
-          ? [q.correctOptionIndex]
-          : [];
-
-      const isBonus = q.options.length > 0 && correctAnswers.length === 0;
-
-      if (isBonus) {
-        correct++;
-        score += pos;
-      } else if (selected !== undefined) {
-        if (correctAnswers.includes(selected)) {
-          correct++;
-          score += pos;
-        } else {
-          wrong++;
-          score -= neg;
-        }
+      const answeredCount = Object.keys(answers).length;
+      const elapsedMs = Date.now() - examStartTimeRef.current;
+      if (!fromTimer && answeredCount >= 5 && elapsedMs < 5000) {
+        alert("⚠️ Security Alert: অস্বাভাবিক দ্রুত উত্তর প্রদানের কারণে পরীক্ষা বাতিল হয়েছে!");
+        router.push("/");
+        return;
       }
-    });
 
-    setFinalScore(score);
-    const timeSpent = totalDuration - timeLeft;
+      isSubmittingRef.current = true;
+      setSubmitted(true);
+      recordDailyActivity();
 
-    recordDailyActivity();
+      const timeSpent = Math.max(1, totalDuration - timeLeft);
 
-    try {
-      const currentUser = auth.currentUser;
-      // 🔥 ফায়ারস্টোর স্কিমা ঠিক করা হলো (userName, isLiveAttempt, totalQuestions নিশ্চিত করা হয়েছে)
-      await addDoc(collection(db, "exam_results"), {
-        examId: id,
-        userId: currentUser?.uid || `guest_${Date.now()}`,
-        userName: name.trim(),
-        studentName: name.trim(),
-        userPhoto: currentUser?.photoURL || "",
-        roll: roll.trim(),
-        score: score,
-        totalQuestions: questions.length,
-        isLiveAttempt: true,
-        timeTakenSec: timeSpent,
-        timestamp: Date.now(),
+      try {
+        const submitRes = await apiFetch<{ success: boolean; score: number }>("/api/exam/submit", {
+          method: "POST",
+          withOptionalAuth: true,
+          body: {
+            examId: id,
+            examTitle,
+            studentName: name.trim(),
+            roll: roll.trim(),
+            questionIds: questions.map((q) => q.id),
+            answers,
+            timeTakenSec: timeSpent,
+          },
+        });
+        setFinalScore(submitRes.score);
+        await loadMeritList();
+      } catch (e) {
+        console.error("Batch result save failed:", e);
+      }
+    },
+    [id, examTitle, name, roll, questions, answers, totalDuration, timeLeft, loadMeritList, router]
+  );
+
+  useEffect(() => {
+    if (!joined || submitted || questions.length === 0) return;
+
+    const timer = setInterval(() => {
+      setTimeLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          setTimeout(() => handleSubmitExam(true), 0);
+          return 0;
+        }
+        return prev - 1;
       });
-      loadMeritList();
-    } catch (e) {
-      console.error("Result save failed:", e);
-    }
-  }, [id, name, roll, questions, answers, totalDuration, timeLeft, loadMeritList]);
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [joined, submitted, questions.length, handleSubmitExam]);
 
   const exportToCSV = () => {
     let csv = "Rank,Student Name,Roll / Phone,Score,Time (Seconds)\n";
@@ -227,20 +193,27 @@ export default function BatchLiveExamPage() {
           totalQuestions={questions.length}
           totalDurationMin={Math.floor(totalDuration / 60)}
           loadingQuestions={loadingQuestions}
-          onJoin={() => setJoined(true)}
+          onJoin={() => {
+            examStartTimeRef.current = Date.now();
+            setJoined(true);
+          }}
         />
       ) : !submitted ? (
         <div className="w-full max-w-4xl flex flex-col items-center pb-24">
           <header className="w-full max-w-4xl flex justify-between items-center px-4 md:px-8 py-3.5 border-b border-white/10 bg-[#121218]/90 backdrop-blur sticky top-0 z-40">
             <div>
-              <h2 className="font-extrabold text-sm md:text-base text-white">{name} ({roll})</h2>
+              <h2 className="font-extrabold text-sm md:text-base text-white">
+                {name} ({roll})
+              </h2>
               <p className="text-[11px] text-gray-400">{examTitle}</p>
             </div>
 
             <div className="flex items-center gap-3">
               <div
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full font-mono font-bold text-xs border ${
-                  timeLeft < 180 ? "bg-red-500/10 border-red-500 text-red-400 animate-pulse" : "bg-cyan-500/10 border-cyan-500 text-cyan-400"
+                  timeLeft < 180
+                    ? "bg-red-500/10 border-red-500 text-red-400 animate-pulse"
+                    : "bg-cyan-500/10 border-cyan-500 text-cyan-400"
                 }`}
               >
                 <Clock size={14} />
@@ -249,7 +222,7 @@ export default function BatchLiveExamPage() {
 
               <button
                 type="button"
-                onClick={handleSubmitExam}
+                onClick={() => handleSubmitExam(false)}
                 className="bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold px-4 py-2 rounded-xl text-xs transition shadow-emerald-500/20 shadow-lg"
               >
                 খাতা জমা

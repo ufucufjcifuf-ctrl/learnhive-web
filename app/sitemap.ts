@@ -1,52 +1,41 @@
 import { MetadataRoute } from "next";
-import { db } from "@/lib/firebase";
-import { doc, getDoc } from "firebase/firestore";
+import { getServerAppBundle } from "@/lib/serverLayoutService";
+import { createExamSlug, createFolderSlug } from "@/lib/slugUtils";
 import { DashboardItem } from "@/types";
-import { extractAllExamsRecursively } from "@/lib/serverExamService";
-import { createFolderSlug } from "@/lib/slugUtils";
 
 export const revalidate = 3600;
 
-// সাইটের প্রতিটি ফোল্ডারের জন্য শর্ট স্লাগ তৈরি ও কালেকশন
-async function extractAllFoldersRecursively(
-  items: DashboardItem[]
-): Promise<{ slug: string; lastModified: Date }[]> {
-  const folders: { slug: string; lastModified: Date }[] = [];
+function collectRoutes(items: DashboardItem[]) {
+  const examSlugs: { slug: string; lastModified: Date }[] = [];
+  const folderSlugs: { slug: string; lastModified: Date }[] = [];
 
-  for (const item of items) {
-    if (item.isHidden) continue;
+  const walk = (list: DashboardItem[]) => {
+    for (const item of list) {
+      if (item.isHidden) continue;
 
-    const isFolder = item.type === "FOLDER" || item.type.includes("SECTION");
-    const rawCmd = (item.command || item.id || "").trim();
+      const rawCmd = (item.command || item.id || "").trim();
+      const lastModified = new Date(item.timestamp || Date.now());
 
-    if (isFolder && rawCmd) {
-      const cleanSlug = createFolderSlug(item.title, rawCmd, item.slug);
-      folders.push({
-        slug: cleanSlug,
-        lastModified: new Date(item.timestamp || Date.now()),
-      });
-    }
+      if (item.type === "EXAM_FIREBASE" && rawCmd) {
+        examSlugs.push({
+          slug: createExamSlug(item.title, rawCmd, item.slug),
+          lastModified,
+        });
+      } else if ((item.type === "FOLDER" || item.type.includes("SECTION")) && rawCmd) {
+        folderSlugs.push({
+          slug: createFolderSlug(item.title, rawCmd, item.slug),
+          lastModified,
+        });
+      }
 
-    if (item.embeddedItems && item.embeddedItems.length > 0) {
-      const nestedFolders = await extractAllFoldersRecursively(item.embeddedItems);
-      folders.push(...nestedFolders);
-    }
-
-    if (item.type === "FOLDER" && item.loadType === "LINKED" && item.command) {
-      try {
-        const subSnap = await getDoc(doc(db, "configuration", item.command));
-        if (subSnap.exists()) {
-          const subItems = (subSnap.data()?.items as DashboardItem[]) || [];
-          const linkedSubFolders = await extractAllFoldersRecursively(subItems);
-          folders.push(...linkedSubFolders);
-        }
-      } catch (e) {
-        console.error("Sitemap folder scan error:", e);
+      if (item.embeddedItems && item.embeddedItems.length > 0) {
+        walk(item.embeddedItems);
       }
     }
-  }
+  };
 
-  return folders;
+  walk(items);
+  return { examSlugs, folderSlugs };
 }
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
@@ -65,15 +54,20 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const dynamicRoutes: MetadataRoute.Sitemap = [];
 
   try {
-    const layoutDoc = await getDoc(doc(db, "configuration", "layout"));
-    if (layoutDoc.exists()) {
-      const items = (layoutDoc.data()?.items as DashboardItem[]) || [];
+    const bundle = await getServerAppBundle();
+    if (bundle) {
+      const allTrees: DashboardItem[] = [
+        ...(bundle.homeItems || []),
+        ...Object.entries(bundle.linkedFolders || {})
+          .filter(([scope]) => scope !== "contact")
+          .flatMap(([, items]) => items),
+      ];
 
-      // ১. সকল এক্সামের ক্লিন লিংক
-      const extractedExams = await extractAllExamsRecursively(items);
+      const { examSlugs, folderSlugs } = collectRoutes(allTrees);
       const uniqueExams = new Set<string>();
+      const uniqueFolders = new Set<string>();
 
-      extractedExams.forEach((exam) => {
+      for (const exam of examSlugs) {
         if (!uniqueExams.has(exam.slug)) {
           uniqueExams.add(exam.slug);
           dynamicRoutes.push({
@@ -83,13 +77,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
             priority: 0.9,
           });
         }
-      });
+      }
 
-      // ২. সকল ফোল্ডারের শর্ট ক্লিন লিংক (/f/...)
-      const extractedFolders = await extractAllFoldersRecursively(items);
-      const uniqueFolders = new Set<string>();
-
-      extractedFolders.forEach((folder) => {
+      for (const folder of folderSlugs) {
         if (!uniqueFolders.has(folder.slug)) {
           uniqueFolders.add(folder.slug);
           dynamicRoutes.push({
@@ -99,7 +89,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
             priority: 0.85,
           });
         }
-      });
+      }
     }
   } catch (err) {
     console.error("Failed to generate dynamic sitemap routes:", err);

@@ -1,7 +1,5 @@
 import { getExamHistory } from "@/lib/historyService";
 import { UserProfile } from "@/lib/authService";
-import { doc, updateDoc } from "firebase/firestore";
-import { db } from "@/lib/firebase";
 
 export interface BadgeDefinition {
   id: string;
@@ -49,39 +47,25 @@ export const ALL_BADGES: Record<string, BadgeDefinition> = {
   },
 };
 
-// ব্যাজ মূল্যায়ন ও আনলক করা
-export async function evaluateAndAwardBadges(profile: UserProfile | null): Promise<string[]> {
+export function evaluateUserBadges(profile: UserProfile | null): string[] {
   const currentBadges = new Set(profile?.badges || ["newbie"]);
   const history = getExamHistory();
 
-  // ১. শার্পশুটার চেক (কোনো পরীক্ষায় ১০০% সঠিক কি না)
   if (history.some((h) => h.totalQuestions > 0 && h.correctAnswers === h.totalQuestions)) {
     currentBadges.add("sharpshooter");
   }
 
-  // ২. এক্সাম বিজয়ী চেক (৫টির বেশি পরীক্ষা দিয়েছে কি না)
   if (history.length >= 5) {
     currentBadges.add("exam_conqueror");
   }
 
-  // ৩. স্কলার চেক (১০০ এর বেশি স্কোর)
   if ((profile?.totalScore || 0) >= 100) {
     currentBadges.add("scholar");
   }
 
-  // ৪. প্রো মেম্বার চেক
   if (profile?.isPremium || (profile?.premiumExpiry && profile.premiumExpiry > Date.now())) {
     currentBadges.add("pro_member");
   }
 
-  const updatedList = Array.from(currentBadges);
-
-  // ফায়ারবেসে সিঙ্ক
-  if (profile?.uid && updatedList.length !== (profile.badges || []).length) {
-    try {
-      await updateDoc(doc(db, "users", profile.uid), { badges: updatedList });
-    } catch (e) {}
-  }
-
-  return updatedList;
+  return Array.from(currentBadges);
 }

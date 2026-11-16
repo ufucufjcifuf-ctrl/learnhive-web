@@ -2,9 +2,11 @@
 
 import React, { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Question } from "@/types";
+import { AnswerEntry, Question } from "@/types";
 import { MathText } from "@/components/MathText";
 import { ReportModal } from "@/components/ReportModal";
+import { apiFetch, getServerNow, syncServerTime } from "@/lib/apiClient";
+import { auth } from "@/lib/firebase";
 import {
   ArrowLeft,
   CheckCircle2,
@@ -14,16 +16,18 @@ import {
   Lock,
   Clock,
   AlertCircle,
-  Home
+  Home,
 } from "lucide-react";
 
 interface ReviewData {
+  examId?: string;
   questions: Question[];
   answers: Record<number, number>;
   score: number;
   correct: number;
   wrong: number;
   skipped: number;
+  isSolutionLocked?: boolean;
   liveEndTime?: number | null;
   hideSolutionUntilLiveEnds?: boolean;
 }
@@ -36,9 +40,12 @@ export default function ReviewScreen() {
   const [filter, setFilter] = useState<"ALL" | "WRONG" | "SKIPPED" | "CORRECT">("ALL");
   const [bookmarks, setBookmarks] = useState<Record<string, boolean>>({});
   const [reportingQuestion, setReportingQuestion] = useState<Question | null>(null);
-  const [currentTime, setCurrentTime] = useState<number>(Date.now());
+  const [currentTime, setCurrentTime] = useState<number>(getServerNow());
+  const [hydratingSolutions, setHydratingSolutions] = useState(false);
 
   useEffect(() => {
+    syncServerTime().then((t) => setCurrentTime(t));
+
     if (typeof window !== "undefined") {
       const decodedId = decodeURIComponent(String(id));
       const stored =
@@ -69,13 +76,60 @@ export default function ReviewScreen() {
     }
   }, [id]);
 
-  // 🔥 রিয়েল-টাইম টাইমার ট্র্যাকার (যাতে লাইভ শেষ হওয়া মাত্রই পেজ রিফ্রেশ ছাড়া নিজে থেকে সলিউশন আনলক হয়)
   useEffect(() => {
     const timer = setInterval(() => {
-      setCurrentTime(Date.now());
+      setCurrentTime(getServerNow());
     }, 1000);
     return () => clearInterval(timer);
   }, []);
+
+  const unlockDeadline = data?.liveEndTime ? data.liveEndTime + 300_000 : 0;
+  const isLocked = Boolean(
+    data?.hideSolutionUntilLiveEnds && data?.liveEndTime && currentTime < unlockDeadline
+  );
+
+  // Auto-hydrate answers & explanations from Worker once Live Exam ends
+  useEffect(() => {
+    if (!data || isLocked || !data.isSolutionLocked || hydratingSolutions) return;
+
+    const targetExamId = data.examId || decodeURIComponent(String(id));
+    if (!targetExamId || targetExamId === "MISTAKE_REVISION") return;
+
+    setHydratingSolutions(true);
+    apiFetch<{ success: boolean; answersMap: Record<string, AnswerEntry> }>(
+      `/api/exam/solutions?id=${encodeURIComponent(targetExamId)}`,
+      { withOptionalAuth: true }
+    )
+      .then((res) => {
+        if (res?.answersMap) {
+          const hydratedQuestions = data.questions.map((q) => {
+            const ans = res.answersMap[q.id];
+            return ans
+              ? {
+                  ...q,
+                  correctOptionIndex: ans.i,
+                  correctOptionIndices: ans.c,
+                  explanation: ans.e,
+                }
+              : q;
+          });
+          const updated: ReviewData = {
+            ...data,
+            questions: hydratedQuestions,
+            isSolutionLocked: false,
+            hideSolutionUntilLiveEnds: false,
+          };
+          setData(updated);
+          if (typeof window !== "undefined") {
+            const decodedId = decodeURIComponent(String(id));
+            sessionStorage.setItem(`mcqhub_review_${id}`, JSON.stringify(updated));
+            localStorage.setItem(`mcqhub_persisted_review_${decodedId}`, JSON.stringify(updated));
+          }
+        }
+      })
+      .catch(() => {})
+      .finally(() => setHydratingSolutions(false));
+  }, [data, isLocked, id, hydratingSolutions]);
 
   const toggleBookmark = (q: Question) => {
     const isCurrentlySaved = Boolean(bookmarks[q.id]);
@@ -98,6 +152,25 @@ export default function ReviewScreen() {
         console.error(e);
       }
     }
+
+    if (auth.currentUser) {
+      if (!isCurrentlySaved) {
+        apiFetch("/api/user/bookmarks", {
+          method: "POST",
+          requireAuth: true,
+          body: {
+            questionId: q.id,
+            questionJson: JSON.stringify(q),
+            subject: data?.examId || "Review",
+          },
+        }).catch(() => {});
+      } else {
+        apiFetch(`/api/user/bookmarks?questionId=${encodeURIComponent(q.id)}`, {
+          method: "DELETE",
+          requireAuth: true,
+        }).catch(() => {});
+      }
+    }
   };
 
   if (!data) {
@@ -114,14 +187,6 @@ export default function ReviewScreen() {
       </div>
     );
   }
-
-  // অ্যান্টি-চিট লক যাচাই (৫ মিনিট গ্রেস পিরিয়ড সহ)
-  const unlockDeadline = data.liveEndTime ? data.liveEndTime + 300_000 : 0;
-  const isLocked = Boolean(
-    data.hideSolutionUntilLiveEnds &&
-      data.liveEndTime &&
-      currentTime < unlockDeadline
-  );
 
   if (isLocked) {
     const remainingSec = Math.max(0, Math.floor((unlockDeadline - currentTime) / 1000));
@@ -189,8 +254,6 @@ export default function ReviewScreen() {
   return (
     <div className="min-h-screen bg-[#0A0A0E] text-white flex flex-col items-center p-4 md:p-6 selection:bg-cyan-500 selection:text-black">
       <div className="w-full max-w-3xl">
-        
-        {/* টপ হেডার */}
         <div className="flex justify-between items-center mb-6 pb-4 border-b border-white/5 sticky top-0 bg-[#0A0A0E]/90 backdrop-blur z-20">
           <div className="flex items-center gap-3">
             <button
@@ -212,7 +275,6 @@ export default function ReviewScreen() {
           </div>
         </div>
 
-        {/* ফিল্টার বাটনসমূহ */}
         <div className="flex gap-2 overflow-x-auto pb-3 mb-6 no-scrollbar text-xs font-bold">
           <button
             type="button"
@@ -260,7 +322,12 @@ export default function ReviewScreen() {
           </button>
         </div>
 
-        {/* প্রশ্নের তালিকা */}
+        {hydratingSolutions && (
+          <div className="mb-4 text-center text-xs text-cyan-400 font-bold animate-pulse">
+            সার্ভার থেকে সমাধান লোড হচ্ছে...
+          </div>
+        )}
+
         {filteredQuestions.length === 0 ? (
           <div className="bg-[#121218] border border-white/5 rounded-3xl p-12 text-center my-6 shadow-xl">
             <p className="text-gray-400 text-sm">এই ক্যাটাগরিতে কোনো প্রশ্ন নেই।</p>
@@ -368,8 +435,12 @@ export default function ReviewScreen() {
                           <div className="flex-1 overflow-x-auto no-scrollbar">
                             <MathText text={opt} />
                           </div>
-                          {isActualCorrect && <CheckCircle2 size={16} className="text-emerald-400 flex-shrink-0" />}
-                          {isUserSelected && !isActualCorrect && <XCircle size={16} className="text-red-400 flex-shrink-0" />}
+                          {isActualCorrect && (
+                            <CheckCircle2 size={16} className="text-emerald-400 flex-shrink-0" />
+                          )}
+                          {isUserSelected && !isActualCorrect && (
+                            <XCircle size={16} className="text-red-400 flex-shrink-0" />
+                          )}
                         </div>
                       );
                     })}
@@ -393,7 +464,7 @@ export default function ReviewScreen() {
       {reportingQuestion && (
         <ReportModal
           question={reportingQuestion}
-          examId={String(id)}
+          examId={data.examId || String(id)}
           onClose={() => setReportingQuestion(null)}
         />
       )}

@@ -1,4 +1,4 @@
-import { auth, db, googleProvider } from "@/lib/firebase";
+import { auth, googleProvider } from "@/lib/firebase";
 import {
   signInWithPopup,
   signOut as fbSignOut,
@@ -6,165 +6,165 @@ import {
   signInWithEmailAndPassword,
   sendPasswordResetEmail,
   updateProfile,
-  User as FirebaseUser,
 } from "firebase/auth";
-import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
+import { apiFetch, ApiError, getWebDeviceId } from "@/lib/apiClient";
+import { UserProfile } from "@/types";
 
-export interface UserProfile {
-  uid: string;
-  name: string;
-  email: string;
-  photoUrl?: string | null;
-  referralCode: string;
-  isPremium: boolean;
-  premiumExpiry: number;
-  totalScore: number;
-  badges: string[];
-  isReferralClaimed: boolean;
+export type { UserProfile };
+
+const PROFILE_CACHE_KEY = "mcqhub_user_profile";
+const inflightSync = new Map<string, Promise<UserProfile | null>>();
+
+export function clearCachedUserProfile(): void {
+  if (typeof window !== "undefined") {
+    localStorage.removeItem(PROFILE_CACHE_KEY);
+  }
 }
 
-export function generateReferralCode(name: string): string {
-  const prefix = name.replace(/\s+/g, "").slice(0, 3).toUpperCase() || "USR";
-  const randomNum = Math.floor(1000 + Math.random() * 9000);
-  return `${prefix}${randomNum}`;
-}
-
-// ১. গুগল সাইন-ইন
-export async function signInWithGoogle(): Promise<UserProfile | null> {
+export function getCachedUserProfile(): UserProfile | null {
+  if (typeof window === "undefined") return null;
   try {
-    const result = await signInWithPopup(auth, googleProvider);
-    const fbUser: FirebaseUser = result.user;
-
-    const userRef = doc(db, "users", fbUser.uid);
-    const snap = await getDoc(userRef);
-
-    if (snap.exists()) {
-      const data = snap.data() as UserProfile;
-      await updateDoc(userRef, { lastLoginTimestamp: Date.now() });
-      return data;
-    } else {
-      const newUser: UserProfile = {
-        uid: fbUser.uid,
-        name: fbUser.displayName || "Student",
-        email: fbUser.email || "",
-        photoUrl: fbUser.photoURL,
-        referralCode: generateReferralCode(fbUser.displayName || "User"),
-        isPremium: false,
-        premiumExpiry: 0,
-        totalScore: 0,
-        badges: ["newbie"],
-        isReferralClaimed: false,
-      };
-      await setDoc(userRef, newUser);
-      return newUser;
-    }
-  } catch (error: any) {
-    console.error("Google Sign-In Error:", error);
-    if (error.code === "auth/unauthorized-domain") {
-      alert("⚠️ Firebase Console-এ আপনার Vercel ডোমেইনটি (learnhive-web.vercel.app) Authorized Domain হিসেবে যোগ করতে হবে।");
-    }
+    const raw = localStorage.getItem(PROFILE_CACHE_KEY);
+    return raw ? (JSON.parse(raw) as UserProfile) : null;
+  } catch {
     return null;
   }
 }
 
-// ২. ইমেইল সাইন-আপ
+export async function syncUserWithBackend(extra?: {
+  name?: string;
+  username?: string;
+  photoUrl?: string | null;
+}): Promise<{ user: UserProfile | null; error: string | null }> {
+  const fbUser = auth.currentUser;
+  if (!fbUser) return { user: null, error: null };
+
+  try {
+    const token = await fbUser.getIdToken();
+    const res = await apiFetch<{ success: boolean; user: UserProfile }>("/api/user/sync", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: {
+        name: extra?.name || fbUser.displayName || "",
+        username: extra?.username || "",
+        photoUrl: extra?.photoUrl ?? fbUser.photoURL ?? null,
+        deviceId: getWebDeviceId(),
+      },
+    });
+
+    if (typeof window !== "undefined" && res.user) {
+      localStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify(res.user));
+    }
+    return { user: res.user, error: null };
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 403) {
+      await fbSignOut(auth);
+      clearCachedUserProfile();
+      return { user: null, error: err.message };
+    }
+    return { user: null, error: err instanceof Error ? err.message : "Sync failed" };
+  }
+}
+
+export async function fetchUserProfile(uid: string): Promise<UserProfile | null> {
+  const fbUser = auth.currentUser;
+  if (!fbUser || fbUser.uid !== uid) return null;
+
+  const existingPromise = inflightSync.get(uid);
+  if (existingPromise) return existingPromise;
+
+  const promise = syncUserWithBackend()
+    .then((r) => r.user)
+    .finally(() => {
+      inflightSync.delete(uid);
+    });
+
+  inflightSync.set(uid, promise);
+  return promise;
+}
+
+export async function signInWithGoogle(): Promise<{ user: UserProfile | null; error: string | null }> {
+  try {
+    const result = await signInWithPopup(auth, googleProvider);
+    const synced = await syncUserWithBackend({
+      name: result.user.displayName || "Student",
+      photoUrl: result.user.photoURL,
+    });
+    return synced;
+  } catch (error: unknown) {
+    const err = error as { code?: string; message?: string };
+    if (err.code === "auth/unauthorized-domain") {
+      return {
+        user: null,
+        error: "Firebase Console-এ ডোমেইনটি Authorized Domain হিসেবে যোগ করতে হবে।",
+      };
+    }
+    return { user: null, error: err.message || "Google লগইন ব্যর্থ হয়েছে।" };
+  }
+}
+
 export async function signUpWithEmail(
   name: string,
   email: string,
-  pass: string
+  pass: string,
+  username?: string
 ): Promise<{ user: UserProfile | null; error: string | null }> {
   try {
     const res = await createUserWithEmailAndPassword(auth, email.trim(), pass);
-    const fbUser = res.user;
+    await updateProfile(res.user, { displayName: name.trim() });
 
-    await updateProfile(fbUser, { displayName: name.trim() });
-
-    const newUser: UserProfile = {
-      uid: fbUser.uid,
+    const synced = await syncUserWithBackend({
       name: name.trim(),
-      email: email.trim().toLowerCase(),
-      photoUrl: null,
-      referralCode: generateReferralCode(name),
-      isPremium: false,
-      premiumExpiry: 0,
-      totalScore: 0,
-      badges: ["newbie"],
-      isReferralClaimed: false,
-    };
-
-    await setDoc(doc(db, "users", fbUser.uid), newUser);
-    return { user: newUser, error: null };
-  } catch (err: any) {
+      username: (username || email.split("@")[0]).trim().toLowerCase(),
+    });
+    return synced;
+  } catch (err: unknown) {
+    const e = err as { code?: string };
     let msg = "সাইন-আপ ব্যর্থ হয়েছে।";
-    if (err.code === "auth/email-already-in-use") msg = "এই ইমেইল দিয়ে ইতিমধ্যে অ্যাকাউন্ট খোলা আছে।";
-    else if (err.code === "auth/weak-password") msg = "পাসওয়ার্ড অন্তত ৬ অক্ষরের হতে হবে।";
+    if (e.code === "auth/email-already-in-use") msg = "এই ইমেইল দিয়ে ইতিমধ্যে অ্যাকাউন্ট খোলা আছে।";
+    else if (e.code === "auth/weak-password") msg = "পাসওয়ার্ড অন্তত ৬ অক্ষরের হতে হবে।";
     return { user: null, error: msg };
   }
 }
 
-// ৩. ইমেইল লগইন
 export async function signInWithEmail(
-  email: string,
+  identifier: string,
   pass: string
 ): Promise<{ user: UserProfile | null; error: string | null }> {
   try {
-    const res = await signInWithEmailAndPassword(auth, email.trim(), pass);
-    const fbUser = res.user;
+    let loginEmail = identifier.trim().toLowerCase();
 
-    const userRef = doc(db, "users", fbUser.uid);
-    const snap = await getDoc(userRef);
-
-    if (snap.exists()) {
-      await updateDoc(userRef, { lastLoginTimestamp: Date.now() });
-      return { user: snap.data() as UserProfile, error: null };
-    } else {
-      const fallbackUser: UserProfile = {
-        uid: fbUser.uid,
-        name: fbUser.displayName || "Student",
-        email: fbUser.email || "",
-        photoUrl: null,
-        referralCode: generateReferralCode(fbUser.displayName || "User"),
-        isPremium: false,
-        premiumExpiry: 0,
-        totalScore: 0,
-        badges: ["newbie"],
-        isReferralClaimed: false,
-      };
-      await setDoc(userRef, fallbackUser);
-      return { user: fallbackUser, error: null };
+    if (!loginEmail.includes("@")) {
+      const resolved = await apiFetch<{ success: boolean; email: string }>("/api/user/resolve-login", {
+        method: "POST",
+        body: { identifier: loginEmail },
+      });
+      loginEmail = resolved.email;
     }
-  } catch (err: any) {
-    return { user: null, error: "ভুল ইমেইল অথবা পাসওয়ার্ড প্রদান করেছেন!" };
+
+    await signInWithEmailAndPassword(auth, loginEmail, pass);
+    const synced = await syncUserWithBackend();
+    return synced;
+  } catch (err: unknown) {
+    if (err instanceof ApiError) {
+      return { user: null, error: err.message };
+    }
+    return { user: null, error: "ভুল ইউজারনেম/ইমেইল অথবা পাসওয়ার্ড প্রদান করেছেন!" };
   }
 }
 
-// ৪. পাসওয়ার্ড রিসেট
-export async function resetPasswordEmail(email: string): Promise<{ success: boolean; error: string | null }> {
+export async function resetPasswordEmail(
+  email: string
+): Promise<{ success: boolean; error: string | null }> {
   try {
     await sendPasswordResetEmail(auth, email.trim());
     return { success: true, error: null };
-  } catch (err: any) {
+  } catch {
     return { success: false, error: "ইমেইলটি সঠিক নয় অথবা অ্যাকাউন্ট নেই।" };
   }
 }
 
-// ৫. লগআউট
 export async function signOutUser(): Promise<void> {
   await fbSignOut(auth);
-  if (typeof window !== "undefined") {
-    localStorage.removeItem("mcqhub_user_profile");
-  }
-}
-
-// ৬. প্রোফাইল লোড
-export async function fetchUserProfile(uid: string): Promise<UserProfile | null> {
-  try {
-    const snap = await getDoc(doc(db, "users", uid));
-    if (snap.exists()) {
-      return snap.data() as UserProfile;
-    }
-    return null;
-  } catch (error) {
-    return null;
-  }
+  clearCachedUserProfile();
 }

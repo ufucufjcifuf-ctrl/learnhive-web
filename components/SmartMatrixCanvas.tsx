@@ -3,10 +3,12 @@
 import React, { useRef, useState, useEffect } from "react";
 import { DashboardItem } from "@/types";
 import { DynamicCard } from "@/components/DynamicCard";
+import { useAuth } from "@/lib/useAuth";
 
 export const SmartMatrixCanvas: React.FC<{ items: DashboardItem[] }> = ({ items }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [containerWidth, setContainerWidth] = useState<number>(750);
+  const { isPro } = useAuth();
 
   useEffect(() => {
     const updateWidth = () => {
@@ -19,12 +21,16 @@ export const SmartMatrixCanvas: React.FC<{ items: DashboardItem[] }> = ({ items 
     return () => window.removeEventListener("resize", updateWidth);
   }, []);
 
-  // অ্যান্ড্রয়েডের মতো ১ ইউনিট = কন্টেইনার উইডথের ১%
   const unitPx = containerWidth / 100;
 
   let cursorY = 0;
   const processedItems = items
-    .filter((it) => !it.isHidden)
+    .filter((it) => {
+      if (it.isHidden) return false;
+      if (it.visibilityCondition === "PREMIUM_ONLY" && !isPro) return false;
+      if (it.visibilityCondition === "FREE_ONLY" && isPro) return false;
+      return true;
+    })
     .map((item) => {
       const design = item.cardDesign || {
         gridX: 0,

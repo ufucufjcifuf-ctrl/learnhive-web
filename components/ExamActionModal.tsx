@@ -1,12 +1,14 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { DashboardItem } from "@/types";
 import { MathText } from "@/components/MathText";
 import { Play, BrainCircuit, BookOpen, Award, X, Share2, Calendar, Radio } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { QuestionCountModal } from "@/components/QuestionCountModal";
 import { createExamSlug, createNoteSlug } from "@/lib/slugUtils";
+import { getServerNow } from "@/lib/apiClient";
+import { getExamHistory } from "@/lib/historyService";
 
 interface ExamActionModalProps {
   item: DashboardItem | null;
@@ -17,26 +19,49 @@ export const ExamActionModal: React.FC<ExamActionModalProps> = ({ item, onClose 
   const router = useRouter();
   const [showCountModal, setShowCountModal] = useState(false);
 
+  const statusInfo = useMemo(() => {
+    if (!item) {
+      return { isLive: false, isArchive: false, isClosed: false, hasTaken: false };
+    }
+    const config = item.examConfig;
+    const now = getServerNow();
+    const isLive = Boolean(
+      config?.startTimeMs &&
+        config?.liveEndTimeMs &&
+        now >= config.startTimeMs &&
+        now <= config.liveEndTimeMs
+    );
+    const isArchive = Boolean(
+      config?.liveEndTimeMs &&
+        now > config.liveEndTimeMs &&
+        (!config.archiveEndTimeMs || now <= config.archiveEndTimeMs)
+    );
+    const isClosed = Boolean(config?.archiveEndTimeMs && now > config.archiveEndTimeMs);
+    const rawCmd = item.command || item.id;
+    const history = getExamHistory();
+    const hasTaken = history.some(
+      (h) => h.examId === rawCmd || h.examTitle.includes(item.title)
+    );
+    return { isLive, isArchive, isClosed, hasTaken };
+  }, [item]);
+
   if (!item) return null;
 
   const rawCmd = item.command || item.id;
   const config = item.examConfig;
-
-  // ব্রাউজার অ্যাড্রেসবারের জন্য ক্লিন স্লাগ
   const cleanExamSlug = createExamSlug(item.title, rawCmd, item.slug);
-
-  const isLive =
-    config?.startTimeMs &&
-    config?.liveEndTimeMs &&
-    Date.now() >= config.startTimeMs &&
-    Date.now() <= config.liveEndTimeMs;
+  const { isLive, isArchive, isClosed, hasTaken } = statusInfo;
 
   const handleShare = () => {
-    const slug = item.slug || cleanExamSlug;
+    const slug = item.slug?.trim() || cleanExamSlug;
     const url = `${window.location.origin}/p/${encodeURIComponent(slug)}`;
-    
+
     if (navigator.share) {
-      navigator.share({ title: item.seoTitle || item.title, url, text: `Give this exam on Learn Hive: ${item.title}\n${url}` });
+      navigator.share({
+        title: item.seoTitle || item.title,
+        url,
+        text: `Give this exam on Learn Hive: ${item.title}\n${url}`,
+      });
     } else {
       navigator.clipboard.writeText(url);
       alert("পরীক্ষার লিংক কপি হয়েছে!");
@@ -44,6 +69,11 @@ export const ExamActionModal: React.FC<ExamActionModalProps> = ({ item, onClose 
   };
 
   const handleStartExamClick = () => {
+    if (isLive && hasTaken) {
+      alert("⚠️ আপনি ইতিমধ্যে এই লাইভ পরীক্ষায় একবার অংশ নিয়েছেন!");
+      return;
+    }
+
     const liveParams = config?.liveEndTimeMs
       ? `&liveEnd=${config.liveEndTimeMs}&hideSolution=${Boolean(config.hideSolutionUntilLiveEnds)}`
       : "";
@@ -52,22 +82,34 @@ export const ExamActionModal: React.FC<ExamActionModalProps> = ({ item, onClose 
       setShowCountModal(true);
     } else {
       onClose();
-      // টাইমার ফিক্স: অ্যাডমিনের নির্ধারিত duration ও মার্কিং বাধ্যতামূলক পাঠানো
       const durationParam = config?.durationMinutes ? `&duration=${config.durationMinutes}` : "";
       const posParam = `&pos=${config?.positiveMark ?? 1.0}`;
       const negParam = `&neg=${config?.negativeMark ?? 0.25}`;
+      const shuffleParam = `&shuffle=${config?.isShuffleEnabled ?? true}`;
 
       router.push(
-        `/exam/${encodeURIComponent(cleanExamSlug)}?title=${encodeURIComponent(item.title)}${durationParam}${posParam}${negParam}${liveParams}`
+        `/exam/${encodeURIComponent(cleanExamSlug)}?title=${encodeURIComponent(
+          item.title
+        )}${durationParam}${posParam}${negParam}${shuffleParam}${liveParams}`
       );
     }
   };
+
+  const modeBadgeText =
+    isLive && hasTaken
+      ? "লাইভ সম্পন্ন (পুনরায় অনুমোদিত নয়)"
+      : isLive
+      ? "লাইভ চলছে"
+      : hasTaken || isClosed
+      ? "প্র্যাকটিস মোড"
+      : isArchive
+      ? "আর্কাইভ এক্সাম"
+      : null;
 
   return (
     <>
       <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 selection:bg-cyan-500 selection:text-black">
         <div className="bg-[#121218] border border-white/10 rounded-3xl w-full max-w-md p-6 shadow-2xl relative animate-in fade-in zoom-in-95 duration-200">
-          
           <div className="flex justify-between items-start mb-4">
             <div className="flex-1 pr-2">
               <h3 className="font-extrabold text-base md:text-lg text-white leading-snug line-clamp-2">
@@ -95,10 +137,16 @@ export const ExamActionModal: React.FC<ExamActionModalProps> = ({ item, onClose 
             </div>
           </div>
 
-          <div className="flex items-center gap-2 mb-6 text-[11px] font-bold text-gray-400">
-            {isLive && (
-              <span className="bg-red-500/20 text-red-400 border border-red-500/40 px-3 py-1 rounded-xl flex items-center gap-1">
-                <Radio size={12} className="animate-pulse" /> লাইভ চলছে
+          <div className="flex flex-wrap items-center gap-2 mb-6 text-[11px] font-bold text-gray-400">
+            {modeBadgeText && (
+              <span
+                className={`px-3 py-1 rounded-xl flex items-center gap-1 border ${
+                  isLive
+                    ? "bg-red-500/20 text-red-400 border-red-500/40"
+                    : "bg-amber-500/15 text-amber-300 border-amber-500/30"
+                }`}
+              >
+                {isLive && <Radio size={12} className="animate-pulse" />} {modeBadgeText}
               </span>
             )}
             {config?.durationMinutes ? (
@@ -120,23 +168,33 @@ export const ExamActionModal: React.FC<ExamActionModalProps> = ({ item, onClose 
               className={`w-full py-3.5 px-4 rounded-2xl font-extrabold text-xs transition flex items-center justify-center gap-2 shadow-lg ${
                 isLive
                   ? "bg-red-500 hover:bg-red-400 text-white shadow-red-500/20"
+                  : hasTaken || isClosed
+                  ? "bg-amber-400 hover:bg-amber-300 text-black shadow-amber-400/20"
                   : "bg-cyan-500 hover:bg-cyan-400 text-black shadow-cyan-500/20"
               }`}
             >
               <Play size={16} className={isLive ? "fill-white" : "fill-black"} />
-              {isLive ? "লাইভ পরীক্ষায় অংশ নিন (START LIVE)" : "পরীক্ষা শুরু করুন (START EXAM)"}
+              {isLive
+                ? "লাইভ পরীক্ষায় অংশ নিন (START LIVE)"
+                : hasTaken || isClosed
+                ? "প্র্যাকটিস শুরু করুন (PRACTICE)"
+                : "পরীক্ষা শুরু করুন (START EXAM)"}
             </button>
 
-            <button
-              type="button"
-              onClick={() => {
-                onClose();
-                router.push(`/adaptive/${encodeURIComponent(cleanExamSlug)}?title=${encodeURIComponent(item.title)}`);
-              }}
-              className="w-full py-3.5 px-4 rounded-2xl bg-pink-600/15 hover:bg-pink-600/25 border border-pink-500/40 text-pink-300 font-extrabold text-xs transition flex items-center justify-center gap-2"
-            >
-              <BrainCircuit size={16} /> 🚀 স্মার্ট প্র্যাকটিস (AI ADAPTIVE)
-            </button>
+            {config?.isSmartAdaptiveEnabled !== false && !isLive && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  router.push(
+                    `/adaptive/${encodeURIComponent(cleanExamSlug)}?title=${encodeURIComponent(item.title)}`
+                  );
+                }}
+                className="w-full py-3.5 px-4 rounded-2xl bg-pink-600/15 hover:bg-pink-600/25 border border-pink-500/40 text-pink-300 font-extrabold text-xs transition flex items-center justify-center gap-2"
+              >
+                <BrainCircuit size={16} /> 🚀 স্মার্ট প্র্যাকটিস (AI ADAPTIVE)
+              </button>
+            )}
 
             {config?.attachedNoteLink && (
               <button
@@ -169,19 +227,21 @@ export const ExamActionModal: React.FC<ExamActionModalProps> = ({ item, onClose 
               </button>
             )}
 
-            {/* 🔥 লিডারবোর্ড ফিক্স: আসল rawCmd দিয়ে লিডারবোর্ড লোড হবে যাতে ফায়ারস্টোর ডক মিসম্যাচ না হয় */}
-            <button
-              type="button"
-              onClick={() => {
-                onClose();
-                router.push(`/leaderboard/${encodeURIComponent(rawCmd)}?title=${encodeURIComponent(item.title)}`);
-              }}
-              className="w-full py-3.5 px-4 rounded-2xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 font-extrabold text-xs transition flex items-center justify-center gap-2"
-            >
-              <Award size={16} /> এই পরীক্ষার মেধা তালিকা (LEADERBOARD)
-            </button>
+            {(config?.isLeaderboardEnabled ?? true) && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  router.push(
+                    `/leaderboard/${encodeURIComponent(rawCmd)}?title=${encodeURIComponent(item.title)}`
+                  );
+                }}
+                className="w-full py-3.5 px-4 rounded-2xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 font-extrabold text-xs transition flex items-center justify-center gap-2"
+              >
+                <Award size={16} /> এই পরীক্ষার মেধা তালিকা (LEADERBOARD)
+              </button>
+            )}
           </div>
-
         </div>
       </div>
 

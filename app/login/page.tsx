@@ -4,24 +4,24 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { signInWithEmail, signInWithGoogle } from "@/lib/authService";
-import { ArrowLeft, Mail, Lock, Eye, EyeOff, LogIn, AlertCircle } from "lucide-react";
+import { ArrowLeft, User as UserIcon, Lock, Eye, EyeOff, LogIn, AlertCircle } from "lucide-react";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const handleEmailLogin = async (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email.trim() || !password.trim()) return;
+    if (!identifier.trim() || !password.trim()) return;
 
     setErrorMsg(null);
     setLoading(true);
 
-    const { user, error } = await signInWithEmail(email, password);
+    const { user, error } = await signInWithEmail(identifier, password);
     setLoading(false);
 
     if (error) {
@@ -32,10 +32,13 @@ export default function LoginPage() {
   };
 
   const handleGoogleLogin = async () => {
+    setErrorMsg(null);
     setLoading(true);
-    const user = await signInWithGoogle();
+    const { user, error } = await signInWithGoogle();
     setLoading(false);
-    if (user) {
+    if (error) {
+      setErrorMsg(error);
+    } else if (user) {
       router.push("/profile");
     }
   };
@@ -43,9 +46,8 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-[#0A0A0E] text-white flex flex-col items-center justify-center p-4 md:p-6 selection:bg-cyan-500 selection:text-black">
       <div className="w-full max-w-md bg-[#121218] border border-white/10 rounded-3xl p-6 md:p-8 shadow-2xl relative">
-        
-        {/* টপ ব্যাক বাটন */}
         <button
+          type="button"
           onClick={() => router.push("/")}
           className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white mb-6 inline-flex items-center gap-1.5 text-xs font-bold transition"
         >
@@ -57,7 +59,9 @@ export default function LoginPage() {
             H
           </div>
           <h1 className="text-2xl font-black tracking-wide">লগইন করুন</h1>
-          <p className="text-xs text-gray-400 mt-1">আপনার Learn Hive অ্যাকাউন্টে প্রবেশ করুন</p>
+          <p className="text-xs text-gray-400 mt-1">
+            আপনার Learn Hive ইউজারনেম অথবা ইমেইল দিয়ে প্রবেশ করুন
+          </p>
         </div>
 
         {errorMsg && (
@@ -67,24 +71,29 @@ export default function LoginPage() {
           </div>
         )}
 
-        <form onSubmit={handleEmailLogin} className="flex flex-col gap-3.5">
+        <form onSubmit={handleLogin} className="flex flex-col gap-3.5">
           <div>
-            <label className="text-xs text-gray-300 font-bold block mb-1">ইমেইল অ্যাড্রেস</label>
+            <label className="text-xs text-gray-300 font-bold block mb-1">ইউজারনেম অথবা ইমেইল</label>
             <div className="relative">
-              <Mail size={16} className="absolute left-4 top-3.5 text-gray-400" />
+              <UserIcon size={16} className="absolute left-4 top-3.5 text-gray-400" />
               <input
-                type="email"
+                type="text"
                 required
-                placeholder="student@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                placeholder="যেমন: ferdous357 বা student@gmail.com"
+                value={identifier}
+                onChange={(e) => setIdentifier(e.target.value)}
                 className="w-full bg-white/5 border border-white/10 rounded-2xl pl-11 pr-4 py-3 text-xs md:text-sm text-white focus:border-cyan-500 outline-none transition"
               />
             </div>
           </div>
 
           <div>
-            <label className="text-xs text-gray-300 font-bold block mb-1">পাসওয়ার্ড</label>
+            <div className="flex justify-between items-center mb-1">
+              <label className="text-xs text-gray-300 font-bold">পাসওয়ার্ড</label>
+              <Link href="/forgot-password" className="text-[11px] text-cyan-400 hover:underline font-semibold">
+                পাসওয়ার্ড ভুলে গেছেন?
+              </Link>
+            </div>
             <div className="relative">
               <Lock size={16} className="absolute left-4 top-3.5 text-gray-400" />
               <input
@@ -120,7 +129,6 @@ export default function LoginPage() {
           <div className="flex-1 h-px bg-white/10"></div>
         </div>
 
-        {/* গুগল লগইন বাটন */}
         <button
           type="button"
           onClick={handleGoogleLogin}
@@ -154,7 +162,6 @@ export default function LoginPage() {
             নতুন অ্যাকাউন্ট খুলুন
           </Link>
         </p>
-
       </div>
     </div>
   );

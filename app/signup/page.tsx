@@ -4,11 +4,12 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { signUpWithEmail, signInWithGoogle } from "@/lib/authService";
-import { ArrowLeft, User as UserIcon, Mail, Lock, Eye, EyeOff, UserPlus, AlertCircle } from "lucide-react";
+import { ArrowLeft, User as UserIcon, Mail, Lock, Eye, EyeOff, UserPlus, AlertCircle, AtSign } from "lucide-react";
 
 export default function SignUpPage() {
   const router = useRouter();
   const [name, setName] = useState("");
+  const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -19,6 +20,12 @@ export default function SignUpPage() {
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !email.trim() || !password.trim()) return;
+
+    const cleanUsername = username.trim().toLowerCase();
+    if (cleanUsername && !/^[a-z0-9]+$/.test(cleanUsername)) {
+      setErrorMsg("ইউজারনেমে শুধুমাত্র ছোট হাতের ইংরেজি অক্ষর ও সংখ্যা ব্যবহার করা যাবে (স্পেস ছাড়া)।");
+      return;
+    }
 
     if (password.length < 6) {
       setErrorMsg("পাসওয়ার্ড অবশ্যই অন্তত ৬ অক্ষরের হতে হবে!");
@@ -33,7 +40,7 @@ export default function SignUpPage() {
     setErrorMsg(null);
     setLoading(true);
 
-    const { user, error } = await signUpWithEmail(name, email, password);
+    const { user, error } = await signUpWithEmail(name, email, password, cleanUsername || undefined);
     setLoading(false);
 
     if (error) {
@@ -44,10 +51,13 @@ export default function SignUpPage() {
   };
 
   const handleGoogleSignup = async () => {
+    setErrorMsg(null);
     setLoading(true);
-    const user = await signInWithGoogle();
+    const { user, error } = await signInWithGoogle();
     setLoading(false);
-    if (user) {
+    if (error) {
+      setErrorMsg(error);
+    } else if (user) {
       router.push("/profile");
     }
   };
@@ -55,8 +65,8 @@ export default function SignUpPage() {
   return (
     <div className="min-h-screen bg-[#0A0A0E] text-white flex flex-col items-center justify-center p-4 md:p-6 selection:bg-cyan-500 selection:text-black">
       <div className="w-full max-w-md bg-[#121218] border border-white/10 rounded-3xl p-6 md:p-8 shadow-2xl relative">
-        
         <button
+          type="button"
           onClick={() => router.push("/")}
           className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white mb-6 inline-flex items-center gap-1.5 text-xs font-bold transition"
         >
@@ -89,6 +99,20 @@ export default function SignUpPage() {
                 placeholder="যেমন: সাকিব হাসান"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
+                className="w-full bg-white/5 border border-white/10 rounded-2xl pl-11 pr-4 py-3 text-xs md:text-sm text-white focus:border-cyan-500 outline-none transition"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs text-gray-300 font-bold block mb-1">ইউজারনেম (ঐচ্ছিক)</label>
+            <div className="relative">
+              <AtSign size={16} className="absolute left-4 top-3.5 text-gray-400" />
+              <input
+                type="text"
+                placeholder="যেমন: sakib2026 (অ্যাপ ও ওয়েবে লগইনের জন্য)"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
                 className="w-full bg-white/5 border border-white/10 rounded-2xl pl-11 pr-4 py-3 text-xs md:text-sm text-white focus:border-cyan-500 outline-none transition"
               />
             </div>
@@ -194,7 +218,6 @@ export default function SignUpPage() {
             লগইন করুন
           </Link>
         </p>
-
       </div>
     </div>
   );

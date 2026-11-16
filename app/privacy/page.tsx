@@ -2,10 +2,10 @@
 
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
-import { auth, db } from "@/lib/firebase";
+import { auth } from "@/lib/firebase";
 import { deleteUser } from "firebase/auth";
-import { doc, deleteDoc } from "firebase/firestore";
-import { ArrowLeft, Shield, Trash2, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { clearCachedUserProfile } from "@/lib/authService";
+import { ArrowLeft, Shield, Trash2, AlertTriangle } from "lucide-react";
 
 export default function PrivacyPage() {
   const router = useRouter();
@@ -21,13 +21,14 @@ export default function PrivacyPage() {
 
     setDeleting(true);
     try {
-      // ১. ফায়ারস্টোর থেকে ইউজারের ডেটা মুছে ফেলা
-      await deleteDoc(doc(db, "users", user.uid));
-      // ২. ফায়ারবেস অথেনটিকেশন থেকে অ্যাকাউন্ট মুছে ফেলা
       await deleteUser(user);
-      alert("আপনার অ্যাকাউন্ট ও ডেটা সম্পূর্ণ মুছে ফেলা হয়েছে।");
+      clearCachedUserProfile();
+      localStorage.removeItem("mcqhub_exam_history");
+      localStorage.removeItem("mcqhub_saved_questions_detail");
+      localStorage.removeItem("mcqhub_mistake_bank");
+      alert("আপনার অ্যাকাউন্ট ও ডেটা মুছে ফেলা হয়েছে।");
       router.push("/");
-    } catch (e: any) {
+    } catch {
       alert("নিরাপত্তার স্বার্থে অ্যাকাউন্ট মুছে ফেলার আগে পুনরায় একবার লগইন করে নিতে হবে।");
     } finally {
       setDeleting(false);
@@ -38,10 +39,12 @@ export default function PrivacyPage() {
   return (
     <div className="min-h-screen bg-[#0A0A0E] text-white flex flex-col items-center p-4 md:p-6 selection:bg-cyan-500 selection:text-black">
       <div className="w-full max-w-2xl pb-24">
-        
-        {/* হেডার */}
         <div className="flex items-center gap-3 mb-6 pb-4 border-b border-white/5">
-          <button onClick={() => router.back()} className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300">
+          <button
+            type="button"
+            onClick={() => router.back()}
+            className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300"
+          >
             <ArrowLeft size={18} />
           </button>
           <div>
@@ -52,7 +55,6 @@ export default function PrivacyPage() {
           </div>
         </div>
 
-        {/* পলিসি টেক্সট */}
         <div className="bg-[#121218] border border-white/10 rounded-3xl p-6 md:p-8 shadow-xl text-xs md:text-sm text-gray-300 leading-relaxed flex flex-col gap-4 mb-6">
           <h2 className="text-base font-bold text-white">তথ্য সংগ্রহ ও ব্যবহার</h2>
           <p>
@@ -65,7 +67,6 @@ export default function PrivacyPage() {
           </p>
         </div>
 
-        {/* অ্যাকাউন্ট ডিলিট বক্স */}
         <div className="bg-red-500/10 border border-red-500/30 rounded-3xl p-6 shadow-xl text-left">
           <h3 className="text-sm font-bold text-red-400 flex items-center gap-2 mb-1">
             <Trash2 size={16} /> অ্যাকাউন্ট স্থায়ীভাবে মুছে ফেলুন (Delete Account)
@@ -75,30 +76,33 @@ export default function PrivacyPage() {
           </p>
 
           <button
+            type="button"
             onClick={() => setShowConfirm(true)}
             className="bg-red-500 hover:bg-red-600 text-white font-extrabold px-5 py-2.5 rounded-xl text-xs transition shadow-lg shadow-red-500/20"
           >
             অ্যাকাউন্ট ডিলিট করুন
           </button>
         </div>
-
       </div>
 
-      {/* ডিলিট কনফার্মেশন ডায়ালগ */}
       {showConfirm && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-[#121218] border border-red-500/30 rounded-3xl w-full max-w-sm p-6 text-center shadow-2xl">
             <AlertTriangle size={36} className="text-red-400 mx-auto mb-3" />
             <h3 className="text-base font-bold text-white">সত্যিই কি মুছে ফেলতে চান?</h3>
-            <p className="text-xs text-gray-400 mt-1 mb-6">এই কাজটি ফিরিয়ে আনা সম্ভব নয়। আপনার সব স্কোর মুছে যাবে।</p>
+            <p className="text-xs text-gray-400 mt-1 mb-6">
+              এই কাজটি ফিরিয়ে আনা সম্ভব নয়। আপনার সব স্কোর মুছে যাবে।
+            </p>
             <div className="flex gap-2">
               <button
+                type="button"
                 onClick={() => setShowConfirm(false)}
                 className="flex-1 py-2.5 rounded-xl bg-white/5 text-gray-400 text-xs font-bold"
               >
                 বাতিল
               </button>
               <button
+                type="button"
                 onClick={handleDeleteAccount}
                 disabled={deleting}
                 className="flex-1 py-2.5 rounded-xl bg-red-500 text-white text-xs font-black"

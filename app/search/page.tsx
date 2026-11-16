@@ -2,22 +2,24 @@
 
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { getCachedHomeLayout } from "@/lib/layoutService";
+import { getAllSearchableItems } from "@/lib/layoutService";
 import { searchItemsWithRanking } from "@/lib/searchService";
 import { createFolderSlug, createExamSlug, createNoteSlug } from "@/lib/slugUtils";
+import { useAuth } from "@/lib/useAuth";
 import { DashboardItem } from "@/types";
 import { MathText } from "@/components/MathText";
 import { ArrowLeft, Search, Play, Folder, FileText, X, Share2 } from "lucide-react";
 
 export default function SearchPage() {
   const router = useRouter();
+  const { isPro } = useAuth();
   const [queryText, setQueryText] = useState("");
   const [allItems, setAllItems] = useState<DashboardItem[]>([]);
   const [activeFilter, setActiveFilter] = useState<"ALL" | "EXAM" | "FOLDER" | "NOTE">("ALL");
   const [history, setHistory] = useState<string[]>([]);
 
   useEffect(() => {
-    getCachedHomeLayout().then((items) => {
+    getAllSearchableItems().then((items) => {
       setAllItems(items.filter((it) => !it.isHidden));
     });
 
@@ -26,7 +28,7 @@ export default function SearchPage() {
       if (saved) {
         try {
           setHistory(JSON.parse(saved));
-        } catch (e) {}
+        } catch {}
       }
     }
   }, []);
@@ -41,34 +43,55 @@ export default function SearchPage() {
     }
 
     const rawCmd = item.command || item.id;
+    const isLocked = Boolean((item.isPremium || item.examConfig?.isPremium) && !isPro);
+
     if (item.type === "EXAM_FIREBASE") {
+      if (isLocked) {
+        alert("👑 এটি একটি প্রিমিয়াম পরীক্ষা। আনলক করতে PRO মেম্বারশিপ নিন!");
+        router.push("/premium");
+        return;
+      }
       const cleanSlug = createExamSlug(item.title, rawCmd, item.slug);
       router.push(`/exam/${encodeURIComponent(cleanSlug)}?title=${encodeURIComponent(item.title)}`);
     } else if (item.type === "FOLDER" || item.type.includes("SECTION")) {
       const cleanSlug = createFolderSlug(item.title, rawCmd, item.slug);
       router.push(`/f/${encodeURIComponent(cleanSlug)}`);
     } else if (item.type.startsWith("NOTE")) {
+      if (isLocked) {
+        alert("👑 এটি একটি প্রিমিয়াম নোট। আনলক করতে PRO মেম্বারশিপ নিন!");
+        router.push("/premium");
+        return;
+      }
       const noteSlug = createNoteSlug(item.title, rawCmd, null);
-      router.push(`/note/${encodeURIComponent(noteSlug)}?title=${encodeURIComponent(item.title)}&type=${item.type}`);
+      router.push(
+        `/note/${encodeURIComponent(noteSlug)}?title=${encodeURIComponent(item.title)}&type=${item.type}`
+      );
+    } else if (item.type === "HTML_PAGE") {
+      router.push(`/page/${encodeURIComponent(item.id)}?title=${encodeURIComponent(item.title)}`);
+    } else if (item.type === "VIDEO_YOUTUBE") {
+      router.push(`/video/${encodeURIComponent(rawCmd)}?title=${encodeURIComponent(item.title)}`);
     }
   };
 
   const handleShareClick = (e: React.MouseEvent, item: DashboardItem) => {
     e.stopPropagation();
     const rawCmd = item.command || item.id;
-    const cleanSlug = createExamSlug(item.title, rawCmd, item.slug);
-    const targetSlug = item.slug?.trim() || cleanSlug;
-    const url = `${window.location.origin}/p/${encodeURIComponent(targetSlug)}`;
-    
+    const isFolder = item.type === "FOLDER" || item.type.includes("SECTION");
+    const slug = isFolder
+      ? createFolderSlug(item.title, rawCmd, item.slug)
+      : createExamSlug(item.title, rawCmd, item.slug);
+    const routePrefix = isFolder ? "/f/" : "/p/";
+    const url = `${window.location.origin}${routePrefix}${encodeURIComponent(slug)}`;
+
     if (navigator.share) {
       navigator.share({
         title: item.seoTitle || item.title,
         url,
-        text: `Learn Hive-এ পরীক্ষা দিন:\n${item.title}\n${url}`
+        text: `Learn Hive-এ দেখুন:\n${item.title}\n${url}`,
       });
     } else {
       navigator.clipboard.writeText(url);
-      alert("পরীক্ষার লিঙ্ক কপি হয়েছে!");
+      alert("লিংক কপি হয়েছে!");
     }
   };
 
@@ -80,7 +103,13 @@ export default function SearchPage() {
     }
   };
 
-  const rankedResults = searchItemsWithRanking(allItems, queryText);
+  const visibleItems = allItems.filter((it) => {
+    if (it.visibilityCondition === "PREMIUM_ONLY" && !isPro) return false;
+    if (it.visibilityCondition === "FREE_ONLY" && isPro) return false;
+    return true;
+  });
+
+  const rankedResults = searchItemsWithRanking(visibleItems, queryText);
 
   const filtered = rankedResults.filter((it) => {
     if (activeFilter === "EXAM") return it.type === "EXAM_FIREBASE";
@@ -92,8 +121,6 @@ export default function SearchPage() {
   return (
     <div className="min-h-screen bg-[#0A0A0E] text-white flex flex-col items-center p-4 md:p-6 selection:bg-cyan-500 selection:text-black">
       <div className="w-full max-w-xl pb-24">
-        
-        {/* সার্চ বার */}
         <div className="flex items-center gap-3 mb-4">
           <button
             type="button"
@@ -115,7 +142,6 @@ export default function SearchPage() {
           </div>
         </div>
 
-        {/* ফিল্টার বাটন */}
         <div className="flex gap-2 mb-6 text-xs font-bold">
           <button
             type="button"
@@ -155,17 +181,23 @@ export default function SearchPage() {
           </button>
         </div>
 
-        {/* সাম্প্রতিক সার্চ ইতিহাস */}
         {!queryText && history.length > 0 && (
           <div className="mb-6">
             <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">সাম্প্রতিক সার্চ</h3>
             <div className="flex flex-wrap gap-2">
               {history.map((term, i) => (
-                <div key={i} className="flex items-center gap-2 bg-[#121218] border border-white/5 px-3 py-1.5 rounded-xl text-xs text-gray-300">
+                <div
+                  key={i}
+                  className="flex items-center gap-2 bg-[#121218] border border-white/5 px-3 py-1.5 rounded-xl text-xs text-gray-300"
+                >
                   <span className="cursor-pointer hover:text-cyan-400" onClick={() => setQueryText(term)}>
                     {term}
                   </span>
-                  <button type="button" onClick={() => removeHistoryItem(term)} className="text-gray-500 hover:text-red-400">
+                  <button
+                    type="button"
+                    onClick={() => removeHistoryItem(term)}
+                    className="text-gray-500 hover:text-red-400"
+                  >
                     <X size={12} />
                   </button>
                 </div>
@@ -174,7 +206,6 @@ export default function SearchPage() {
           </div>
         )}
 
-        {/* ফলাফল তালিকা */}
         {queryText.trim() && (
           <div className="flex flex-col gap-2.5">
             <span className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">
@@ -183,7 +214,7 @@ export default function SearchPage() {
 
             {filtered.length === 0 ? (
               <div className="bg-[#121218] border border-white/5 rounded-3xl p-8 text-center text-gray-500 text-xs">
-                "{queryText}" দিয়ে কোনো ফলাফল পাওয়া যায়নি।
+                &quot;{queryText}&quot; দিয়ে কোনো ফলাফল পাওয়া যায়নি।
               </div>
             ) : (
               filtered.map((item) => (
@@ -226,7 +257,6 @@ export default function SearchPage() {
             )}
           </div>
         )}
-
       </div>
     </div>
   );

@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useState } from "react";
-import { db, auth } from "@/lib/firebase";
-import { collection, addDoc } from "firebase/firestore";
+import { auth } from "@/lib/firebase";
+import { apiFetch } from "@/lib/apiClient";
 import { AlertTriangle, X, Send, CheckCircle2 } from "lucide-react";
 import { Question } from "@/types";
 
@@ -26,16 +26,16 @@ export const ReportModal: React.FC<ReportModalProps> = ({ question, examId, onCl
     setSubmitting(true);
     try {
       const user = auth.currentUser;
-      // ফায়ারস্টোরের question_reports কালেকশনে সেভ (Admin App Compatible)
-      await addDoc(collection(db, "question_reports"), {
-        reportType: "QUESTION",
-        examId: examId,
-        questionId: question.id,
-        question: question.text,
-        reason: reason.trim(),
-        reportedBy: user ? user.displayName || user.email || user.uid : "Web Student",
-        status: "PENDING",
-        timestamp: Date.now(),
+      await apiFetch("/api/report", {
+        method: "POST",
+        body: {
+          reportType: "QUESTION",
+          examId,
+          questionId: question.id,
+          questionText: question.text,
+          reason: reason.trim(),
+          reportedBy: user ? user.displayName || user.email || user.uid : "Web Student",
+        },
       });
       setSuccess(true);
       setTimeout(() => {
@@ -52,14 +52,16 @@ export const ReportModal: React.FC<ReportModalProps> = ({ question, examId, onCl
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 selection:bg-cyan-500 selection:text-black">
       <div className="bg-[#121218] border border-white/10 rounded-3xl w-full max-w-md p-6 shadow-2xl relative animate-in fade-in zoom-in-95 duration-200">
-        
-        {/* হেডার */}
         <div className="flex justify-between items-center pb-3 border-b border-white/5 mb-4">
           <div className="flex items-center gap-2 text-red-400 font-extrabold text-sm">
             <AlertTriangle size={18} />
             <span>প্রশ্নে ভুল রিপোর্ট করুন</span>
           </div>
-          <button onClick={onClose} className="p-1 rounded-xl bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white">
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1 rounded-xl bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white"
+          >
             <X size={16} />
           </button>
         </div>
@@ -111,7 +113,6 @@ export const ReportModal: React.FC<ReportModalProps> = ({ question, examId, onCl
             </div>
           </form>
         )}
-
       </div>
     </div>
   );

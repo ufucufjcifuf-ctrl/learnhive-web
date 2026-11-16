@@ -1,13 +1,15 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { DashboardItem } from "@/types";
 import { SmartMatrixCanvas } from "@/components/SmartMatrixCanvas";
 import { Navbar } from "@/components/Navbar";
 import { GlobalBanner } from "@/components/GlobalBanner";
 import { Footer } from "@/components/Footer";
 import { searchItemsWithRanking } from "@/lib/searchService";
+import { getAllSearchableItems } from "@/lib/layoutService";
 import { createFolderSlug, createExamSlug, createNoteSlug } from "@/lib/slugUtils";
+import { useAuth } from "@/lib/useAuth";
 import {
   Home,
   Award,
@@ -27,15 +29,39 @@ import { useRouter } from "next/navigation";
 
 export const HomeClient: React.FC<{ initialItems: DashboardItem[] }> = ({ initialItems }) => {
   const router = useRouter();
+  const { isPro } = useAuth();
   const [search, setSearch] = useState("");
+  const [searchableItems, setSearchableItems] = useState<DashboardItem[]>(initialItems);
+
+  useEffect(() => {
+    getAllSearchableItems()
+      .then((deepItems) => {
+        if (deepItems && deepItems.length > 0) {
+          setSearchableItems(deepItems);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const visibleSearchPool = searchableItems.filter((it) => {
+    if (it.isHidden) return false;
+    if (it.visibilityCondition === "PREMIUM_ONLY" && !isPro) return false;
+    if (it.visibilityCondition === "FREE_ONLY" && isPro) return false;
+    return true;
+  });
 
   const filteredItems = search.trim()
-    ? searchItemsWithRanking(initialItems, search)
+    ? searchItemsWithRanking(visibleSearchPool, search)
     : initialItems;
 
   const handleSearchItemClick = (item: DashboardItem) => {
     const rawCmd = item.command || item.id;
     if (item.type === "EXAM_FIREBASE") {
+      if ((item.isPremium || item.examConfig?.isPremium) && !isPro) {
+        alert("👑 এটি একটি প্রিমিয়াম পরীক্ষা। আনলক করতে PRO মেম্বারশিপ নিন!");
+        router.push("/premium");
+        return;
+      }
       const cleanSlug = createExamSlug(item.title, rawCmd, item.slug);
       router.push(`/exam/${encodeURIComponent(cleanSlug)}?title=${encodeURIComponent(item.title)}`);
     } else if (item.type === "FOLDER" || item.type.includes("SECTION")) {
@@ -43,7 +69,13 @@ export const HomeClient: React.FC<{ initialItems: DashboardItem[] }> = ({ initia
       router.push(`/f/${encodeURIComponent(cleanSlug)}`);
     } else if (item.type.startsWith("NOTE")) {
       const noteSlug = createNoteSlug(item.title, rawCmd, null);
-      router.push(`/note/${encodeURIComponent(noteSlug)}?title=${encodeURIComponent(item.title)}&type=${item.type}`);
+      router.push(
+        `/note/${encodeURIComponent(noteSlug)}?title=${encodeURIComponent(item.title)}&type=${item.type}`
+      );
+    } else if (item.type === "HTML_PAGE") {
+      router.push(`/page/${encodeURIComponent(item.id)}?title=${encodeURIComponent(item.title)}`);
+    } else if (item.type === "VIDEO_YOUTUBE") {
+      router.push(`/video/${encodeURIComponent(rawCmd)}?title=${encodeURIComponent(item.title)}`);
     }
   };
 
@@ -53,38 +85,58 @@ export const HomeClient: React.FC<{ initialItems: DashboardItem[] }> = ({ initia
       <Navbar />
 
       <div className="w-full max-w-[1400px] flex justify-between gap-6 px-4 md:px-8 py-6">
-        
-        {/* ডেস্কটপ সাইডবার */}
         <aside className="hidden lg:flex flex-col w-[260px] sticky top-20 h-[calc(100vh-100px)] justify-between bg-[#121218] border border-white/5 rounded-3xl p-5 shadow-xl">
           <nav className="flex flex-col gap-2">
-            <Link href="/" className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-cyan-500/10 text-cyan-400 font-bold border border-cyan-500/20 text-sm">
+            <Link
+              href="/"
+              className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-cyan-500/10 text-cyan-400 font-bold border border-cyan-500/20 text-sm"
+            >
               <Home size={18} /> হোম ফিড
             </Link>
-            <Link href="/live" className="flex items-center gap-3 px-4 py-3 rounded-2xl text-gray-400 hover:text-white hover:bg-white/5 font-semibold text-sm transition">
+            <Link
+              href="/live"
+              className="flex items-center gap-3 px-4 py-3 rounded-2xl text-gray-400 hover:text-white hover:bg-white/5 font-semibold text-sm transition"
+            >
               <Flame size={18} className="text-red-500" /> লাইভ ব্যাচ এক্সাম
             </Link>
-            <Link href="/custom-exam" className="flex items-center gap-3 px-4 py-3 rounded-2xl text-gray-400 hover:text-white hover:bg-white/5 font-semibold text-sm transition">
+            <Link
+              href="/custom-exam"
+              className="flex items-center gap-3 px-4 py-3 rounded-2xl text-gray-400 hover:text-white hover:bg-white/5 font-semibold text-sm transition"
+            >
               <Sliders size={18} className="text-cyan-400" /> কাস্টম এক্সাম
             </Link>
-            <Link href="/leaderboard" className="flex items-center gap-3 px-4 py-3 rounded-2xl text-gray-400 hover:text-white hover:bg-white/5 font-semibold text-sm transition">
+            <Link
+              href="/leaderboard"
+              className="flex items-center gap-3 px-4 py-3 rounded-2xl text-gray-400 hover:text-white hover:bg-white/5 font-semibold text-sm transition"
+            >
               <Award size={18} className="text-amber-400" /> মেধা তালিকা
             </Link>
-            <Link href="/mistakes" className="flex items-center gap-3 px-4 py-3 rounded-2xl text-gray-400 hover:text-white hover:bg-white/5 font-semibold text-sm transition">
+            <Link
+              href="/mistakes"
+              className="flex items-center gap-3 px-4 py-3 rounded-2xl text-gray-400 hover:text-white hover:bg-white/5 font-semibold text-sm transition"
+            >
               <BookOpen size={18} className="text-purple-400" /> মিসটেক ব্যাংক
             </Link>
-            <Link href="/bookmarks" className="flex items-center gap-3 px-4 py-3 rounded-2xl text-gray-400 hover:text-white hover:bg-white/5 font-semibold text-sm transition">
+            <Link
+              href="/bookmarks"
+              className="flex items-center gap-3 px-4 py-3 rounded-2xl text-gray-400 hover:text-white hover:bg-white/5 font-semibold text-sm transition"
+            >
               <Bookmark size={18} className="text-emerald-400" /> বুকমার্ক প্রশ্ন
             </Link>
           </nav>
 
-          <Link href="/premium" className="bg-gradient-to-br from-amber-500/10 to-orange-500/5 border border-amber-500/20 rounded-2xl p-4 text-center block transition hover:scale-[1.02]">
+          <Link
+            href="/premium"
+            className="bg-gradient-to-br from-amber-500/10 to-orange-500/5 border border-amber-500/20 rounded-2xl p-4 text-center block transition hover:scale-[1.02]"
+          >
             <Sparkles size={22} className="text-amber-400 mx-auto mb-2" />
             <h4 className="text-xs font-bold text-amber-300">প্রিমিয়াম সুবিধা</h4>
-            <p className="text-[11px] text-gray-400 mt-1">সব পরীক্ষার ব্যাখ্যা এবং সম্পূর্ণ বিজ্ঞাপনমুক্ত সুবিধা পান।</p>
+            <p className="text-[11px] text-gray-400 mt-1">
+              সব পরীক্ষার ব্যাখ্যা এবং সম্পূর্ণ বিজ্ঞাপনমুক্ত সুবিধা পান।
+            </p>
           </Link>
         </aside>
 
-        {/* সেন্ট্রাল স্টেজ (Smart Matrix ক্যানভাস) */}
         <main className="w-full lg:max-w-[750px] min-h-screen flex flex-col pb-24 lg:pb-8">
           <div className="relative mb-6">
             <Search size={18} className="absolute left-4 top-3.5 text-gray-400" />
@@ -99,7 +151,9 @@ export const HomeClient: React.FC<{ initialItems: DashboardItem[] }> = ({ initia
 
           {search.trim() ? (
             <div className="flex flex-col gap-2.5">
-              <span className="text-xs font-bold text-gray-400 mb-2">ফলাফল ({filteredItems.length} টি)</span>
+              <span className="text-xs font-bold text-gray-400 mb-2">
+                ফলাফল ({filteredItems.length} টি)
+              </span>
               {filteredItems.length === 0 ? (
                 <div className="bg-[#121218] border border-white/5 rounded-3xl p-8 text-center text-gray-500 text-xs">
                   কোনো পরীক্ষা বা ফোল্ডার পাওয়া যায়নি।
@@ -113,11 +167,19 @@ export const HomeClient: React.FC<{ initialItems: DashboardItem[] }> = ({ initia
                   >
                     <div className="flex items-center gap-3">
                       <div className="p-2.5 rounded-xl bg-white/5 text-cyan-400">
-                        {item.type === "EXAM_FIREBASE" ? <Play size={16} /> : item.type.startsWith("NOTE") ? <FileText size={16} /> : <Folder size={16} />}
+                        {item.type === "EXAM_FIREBASE" ? (
+                          <Play size={16} />
+                        ) : item.type.startsWith("NOTE") ? (
+                          <FileText size={16} />
+                        ) : (
+                          <Folder size={16} />
+                        )}
                       </div>
                       <div>
                         <h4 className="font-bold text-sm text-white line-clamp-1">{item.title}</h4>
-                        {item.subtitle && <p className="text-[11px] text-gray-400 line-clamp-1">{item.subtitle}</p>}
+                        {item.subtitle && (
+                          <p className="text-[11px] text-gray-400 line-clamp-1">{item.subtitle}</p>
+                        )}
                       </div>
                     </div>
                     <span className="text-xs text-cyan-400 font-extrabold">খুলুন →</span>
@@ -133,7 +195,6 @@ export const HomeClient: React.FC<{ initialItems: DashboardItem[] }> = ({ initia
           )}
         </main>
 
-        {/* ডান পাশের উইজেট প্যানেল */}
         <aside className="hidden xl:flex flex-col w-[300px] sticky top-20 h-[calc(100vh-100px)] gap-6">
           <div className="bg-[#121218] border border-white/5 rounded-3xl p-5 shadow-xl">
             <h3 className="font-bold text-sm text-cyan-400 flex items-center gap-2 mb-3">
@@ -150,7 +211,6 @@ export const HomeClient: React.FC<{ initialItems: DashboardItem[] }> = ({ initia
             </Link>
           </div>
         </aside>
-
       </div>
     </div>
   );

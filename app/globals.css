@@ -5,11 +5,68 @@
   --foreground: #EDEDED;
 }
 
+html.light {
+  color-scheme: light;
+  --background: #F4F6FA;
+  --foreground: #111827;
+}
+
+html.dark {
+  color-scheme: dark;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
   overflow-x: hidden;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* Light Mode Adaptive Overrides (preserves custom colored dashboard cards & action buttons) */
+html.light .bg-\[\#0A0A0E\],
+html.light .bg-\[\#0A0A0E\]\/90,
+html.light .bg-\[\#0A0A0E\]\/80,
+html.light .bg-\[\#0C0C10\] {
+  background-color: #F4F6FA !important;
+}
+
+html.light .bg-\[\#121218\],
+html.light .bg-\[\#121218\]\/90,
+html.light .bg-\[\#121218\]\/95,
+html.light .bg-\[\#121218\]\/80,
+html.light .bg-\[\#161620\] {
+  background-color: #FFFFFF !important;
+  border-color: rgba(15, 23, 42, 0.1) !important;
+}
+
+html.light .bg-white\/5,
+html.light .bg-white\/\[0\.02\] {
+  background-color: rgba(15, 23, 42, 0.04) !important;
+}
+
+html.light .bg-white\/10 {
+  background-color: rgba(15, 23, 42, 0.08) !important;
+}
+
+html.light .border-white\/5,
+html.light .border-white\/10 {
+  border-color: rgba(15, 23, 42, 0.12) !important;
+}
+
+html.light .text-white:not([data-card-surface="custom"]):not([data-card-surface="custom"] *):not(.bg-red-500):not(.bg-red-600):not(.bg-blue-600) {
+  color: #111827 !important;
+}
+
+html.light .text-gray-100,
+html.light .text-gray-200,
+html.light .text-gray-300 {
+  color: #1F2937 !important;
+}
+
+html.light .text-gray-400,
+html.light .text-gray-500 {
+  color: #64748B !important;
 }
 
 /* নো-স্ক্রলবার ইউটিলিটি */

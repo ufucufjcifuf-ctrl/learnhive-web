@@ -3,28 +3,65 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Bookmark, Trash2, Play, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, Bookmark, Trash2, Play } from "lucide-react";
 import { MathText } from "@/components/MathText";
 import { Question } from "@/types";
+import { useAuth } from "@/lib/useAuth";
+import { apiFetch } from "@/lib/apiClient";
 
 export default function BookmarksPage() {
   const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
   const [savedQuestions, setSavedQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const stored = localStorage.getItem("mcqhub_saved_questions_detail");
-      if (stored) {
-        try {
-          setSavedQuestions(JSON.parse(stored));
-        } catch (e) {
-          console.error(e);
+    if (authLoading) return;
+
+    async function loadBookmarks() {
+      let localList: Question[] = [];
+      if (typeof window !== "undefined") {
+        const stored = localStorage.getItem("mcqhub_saved_questions_detail");
+        if (stored) {
+          try {
+            localList = JSON.parse(stored) as Question[];
+          } catch {}
         }
       }
+
+      if (user) {
+        try {
+          const res = await apiFetch<{
+            success: boolean;
+            bookmarks: { question_id: string; question_json: string }[];
+          }>("/api/user/bookmarks", { requireAuth: true });
+
+          const mergedMap = new Map<string, Question>();
+          for (const q of localList) mergedMap.set(q.id, q);
+          for (const row of res.bookmarks || []) {
+            try {
+              const parsed = JSON.parse(row.question_json) as Question;
+              mergedMap.set(parsed.id || row.question_id, parsed);
+            } catch {}
+          }
+          const merged = Array.from(mergedMap.values());
+          setSavedQuestions(merged);
+          if (typeof window !== "undefined") {
+            localStorage.setItem("mcqhub_saved_questions_detail", JSON.stringify(merged));
+          }
+          setLoading(false);
+          return;
+        } catch {
+          // Fallback to local
+        }
+      }
+
+      setSavedQuestions(localList);
       setLoading(false);
     }
-  }, []);
+
+    loadBookmarks();
+  }, [user, authLoading]);
 
   const removeBookmark = (id: string) => {
     const updated = savedQuestions.filter((q) => q.id !== id);
@@ -32,13 +69,30 @@ export default function BookmarksPage() {
     if (typeof window !== "undefined") {
       localStorage.setItem("mcqhub_saved_questions_detail", JSON.stringify(updated));
     }
+    if (user) {
+      apiFetch(`/api/user/bookmarks?questionId=${encodeURIComponent(id)}`, {
+        method: "DELETE",
+        requireAuth: true,
+      }).catch(() => {});
+    }
   };
 
   const clearAll = () => {
     if (confirm("আপনি কি সমস্ত বুকমার্ক করা প্রশ্ন মুছে ফেলতে চান?")) {
+      const ids = savedQuestions.map((q) => q.id);
       setSavedQuestions([]);
       if (typeof window !== "undefined") {
         localStorage.removeItem("mcqhub_saved_questions_detail");
+      }
+      if (user) {
+        Promise.all(
+          ids.map((id) =>
+            apiFetch(`/api/user/bookmarks?questionId=${encodeURIComponent(id)}`, {
+              method: "DELETE",
+              requireAuth: true,
+            }).catch(() => {})
+          )
+        );
       }
     }
   };
@@ -54,8 +108,6 @@ export default function BookmarksPage() {
   return (
     <div className="min-h-screen bg-[#0A0A0E] text-white flex flex-col items-center p-4 md:p-6 selection:bg-cyan-500 selection:text-black">
       <div className="w-full max-w-2xl pb-24">
-        
-        {/* হেডার */}
         <div className="flex justify-between items-center mb-6 pb-4 border-b border-white/5">
           <div className="flex items-center gap-3">
             <Link href="/" className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300">
@@ -71,6 +123,7 @@ export default function BookmarksPage() {
 
           {savedQuestions.length > 0 && (
             <button
+              type="button"
               onClick={clearAll}
               className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1 font-bold p-2"
             >
@@ -93,8 +146,6 @@ export default function BookmarksPage() {
           </div>
         ) : (
           <div className="flex flex-col gap-6">
-            
-            {/* প্র্যাকটিস বাটন বক্স */}
             <div className="bg-[#121218] border border-emerald-500/30 rounded-3xl p-6 shadow-xl flex justify-between items-center">
               <div>
                 <span className="text-xs font-bold text-emerald-400 block mb-1">
@@ -104,6 +155,7 @@ export default function BookmarksPage() {
               </div>
 
               <button
+                type="button"
                 onClick={startBookmarkPractice}
                 className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold px-5 py-2.5 rounded-xl text-xs transition shadow-lg shadow-emerald-500/20"
               >
@@ -111,13 +163,13 @@ export default function BookmarksPage() {
               </button>
             </div>
 
-            {/* প্রশ্নের তালিকা */}
             <div className="flex flex-col gap-4">
               {savedQuestions.map((q, idx) => (
                 <div key={q.id || idx} className="bg-[#121218] border border-white/5 rounded-3xl p-6 shadow-xl">
                   <div className="flex justify-between items-center mb-3 pb-2 border-b border-white/5 text-xs">
                     <span className="font-extrabold text-cyan-400">প্রশ্ন নম্বর #{idx + 1}</span>
                     <button
+                      type="button"
                       onClick={() => removeBookmark(q.id)}
                       className="text-gray-500 hover:text-red-400 transition"
                       title="বুকমার্ক মুছুন"
@@ -150,10 +202,8 @@ export default function BookmarksPage() {
                 </div>
               ))}
             </div>
-
           </div>
         )}
-
       </div>
     </div>
   );
