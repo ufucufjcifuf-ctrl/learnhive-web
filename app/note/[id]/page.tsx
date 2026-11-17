@@ -7,7 +7,16 @@ import { NoteAnnotationDrawer } from "@/components/NoteAnnotationDrawer";
 import { findItemDeeply } from "@/lib/layoutService";
 import { API_BASE_URL, getAuthToken } from "@/lib/apiClient";
 import { useAuth } from "@/lib/useAuth";
-import { ArrowLeft, BookOpen, ChevronLeft, ChevronRight, Bookmark, Lock } from "lucide-react";
+import {
+  ArrowLeft,
+  BookOpen,
+  ChevronLeft,
+  ChevronRight,
+  Bookmark,
+  Lock,
+  ExternalLink,
+  Download,
+} from "lucide-react";
 import Link from "next/link";
 
 export default function NoteViewerPage() {
@@ -73,7 +82,6 @@ export default function NoteViewerPage() {
             setPages(json.data.map((q) => q.text));
           }
         } else {
-          // Load PDF directly from Cloudflare Worker / Backblaze B2 (/media/...)
           const serverPdfUrl =
             targetCommand.startsWith("http://") || targetCommand.startsWith("https://")
               ? targetCommand
@@ -198,12 +206,35 @@ export default function NoteViewerPage() {
           </div>
         ) : noteType === "NOTE_PDF" ? (
           pdfRenderUrl ? (
-            <div className="w-full flex-1 min-h-[80vh] rounded-3xl overflow-hidden border border-white/10 shadow-2xl bg-black">
-              <iframe
-                src={pdfRenderUrl}
-                className="w-full h-full min-h-[80vh] border-0"
-                title={title}
-              ></iframe>
+            <div className="w-full flex-1 flex flex-col gap-3">
+              <div className="flex flex-wrap items-center justify-between gap-2 bg-[#121218] border border-white/10 rounded-2xl p-3 text-xs">
+                <span className="text-gray-400">মোবাইলে PDF দেখতে অসুবিধা হলে নতুন ট্যাবে খুলুন বা ডাউনলোড করুন:</span>
+                <div className="flex items-center gap-2">
+                  <a
+                    href={pdfRenderUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/40 text-cyan-300 font-bold px-3 py-1.5 rounded-xl transition"
+                  >
+                    <ExternalLink size={13} /> নতুন ট্যাবে খুলুন
+                  </a>
+                  <a
+                    href={pdfRenderUrl}
+                    download={`${title.replace(/[^a-zA-Z0-9\u0980-\u09FF_-]/g, "_")}.pdf`}
+                    className="flex items-center gap-1.5 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 text-emerald-300 font-bold px-3 py-1.5 rounded-xl transition"
+                  >
+                    <Download size={13} /> ডাউনলোড
+                  </a>
+                </div>
+              </div>
+
+              <div className="w-full flex-1 min-h-[75vh] rounded-3xl overflow-hidden border border-white/10 shadow-2xl bg-black">
+                <iframe
+                  src={pdfRenderUrl}
+                  className="w-full h-full min-h-[75vh] border-0"
+                  title={title}
+                ></iframe>
+              </div>
             </div>
           ) : (
             <div className="text-center py-20 text-gray-500">PDF পাওয়া যায়নি।</div>

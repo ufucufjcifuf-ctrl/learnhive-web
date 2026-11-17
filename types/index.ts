@@ -55,6 +55,9 @@ export interface UiStyle {
   borderColor?: string;
   background?: BackgroundConfig;
   textConfig?: TextConfig | null;
+  showSubtitle?: boolean;
+  overlayOpacity?: number;
+  showTitleOnImage?: boolean;
 }
 
 export interface UiAction {

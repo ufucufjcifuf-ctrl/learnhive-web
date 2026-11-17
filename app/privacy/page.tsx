@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { auth } from "@/lib/firebase";
 import { deleteUser } from "firebase/auth";
 import { clearCachedUserProfile } from "@/lib/authService";
+import { apiFetch } from "@/lib/apiClient";
 import { ArrowLeft, Shield, Trash2, AlertTriangle } from "lucide-react";
 
 export default function PrivacyPage() {
@@ -21,15 +22,22 @@ export default function PrivacyPage() {
 
     setDeleting(true);
     try {
+      // Delete user profile, bookmarks, mistakes, exam results & analytics from Cloudflare D1 first (while ID token is still valid)
+      await apiFetch("/api/user", {
+        method: "DELETE",
+        requireAuth: true,
+      });
+
+      // Then delete Firebase Auth user
       await deleteUser(user);
       clearCachedUserProfile();
       localStorage.removeItem("mcqhub_exam_history");
       localStorage.removeItem("mcqhub_saved_questions_detail");
       localStorage.removeItem("mcqhub_mistake_bank");
-      alert("আপনার অ্যাকাউন্ট ও ডেটা মুছে ফেলা হয়েছে।");
+      alert("আপনার অ্যাকাউন্ট ও সমস্ত ডেটা স্থায়ীভাবে মুছে ফেলা হয়েছে।");
       router.push("/");
     } catch {
-      alert("নিরাপত্তার স্বার্থে অ্যাকাউন্ট মুছে ফেলার আগে পুনরায় একবার লগইন করে নিতে হবে।");
+      alert("নিরাপত্তার স্বার্থে অ্যাকাউন্ট মুছে ফেলার আগে অনুগ্রহ করে লগআউট করে পুনরায় একবার লগইন করুন।");
     } finally {
       setDeleting(false);
       setShowConfirm(false);

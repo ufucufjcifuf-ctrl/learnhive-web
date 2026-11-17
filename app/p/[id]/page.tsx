@@ -15,6 +15,7 @@ import {
   Play,
   ArrowLeft
 } from "lucide-react";
+export const revalidate = 1800;
 
 type PageProps = {
   params: Promise<{ id: string }>;
