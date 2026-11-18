@@ -3,7 +3,17 @@
 import React, { useState, useMemo } from "react";
 import { DashboardItem } from "@/types";
 import { MathText } from "@/components/MathText";
-import { Play, BrainCircuit, BookOpen, Award, X, Share2, Calendar, Radio } from "lucide-react";
+import {
+  Play,
+  BrainCircuit,
+  BookOpen,
+  Award,
+  X,
+  Share2,
+  Calendar,
+  Radio,
+  Gamepad2,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import { QuestionCountModal } from "@/components/QuestionCountModal";
 import { createExamSlug, createNoteSlug } from "@/lib/slugUtils";
@@ -84,7 +94,7 @@ export const ExamActionModal: React.FC<ExamActionModalProps> = ({ item, onClose 
       onClose();
       const durationParam = config?.durationMinutes ? `&duration=${config.durationMinutes}` : "";
       const posParam = `&pos=${config?.positiveMark ?? 1.0}`;
-      const negParam = `&neg=${config?.negativeMark ?? 0.25}`;
+      const negParam = `&neg=${config?.negativeMark ?? 0.0}`;
       const shuffleParam = `&shuffle=${config?.isShuffleEnabled ?? true}`;
 
       router.push(
@@ -193,6 +203,21 @@ export const ExamActionModal: React.FC<ExamActionModalProps> = ({ item, onClose 
                 className="w-full py-3.5 px-4 rounded-2xl bg-pink-600/15 hover:bg-pink-600/25 border border-pink-500/40 text-pink-300 font-extrabold text-xs transition flex items-center justify-center gap-2"
               >
                 <BrainCircuit size={16} /> 🚀 স্মার্ট প্র্যাকটিস (AI ADAPTIVE)
+              </button>
+            )}
+
+            {config?.isBattleEnabled !== false && !isLive && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  router.push(
+                    `/battle?examId=${encodeURIComponent(rawCmd)}&title=${encodeURIComponent(item.title)}`
+                  );
+                }}
+                className="w-full py-3.5 px-4 rounded-2xl bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/45 text-purple-300 font-extrabold text-xs transition flex items-center justify-center gap-2"
+              >
+                <Gamepad2 size={16} /> ⚔️ গ্রুপ ব্যাটল (2–50+ FRIENDS)
               </button>
             )}
 

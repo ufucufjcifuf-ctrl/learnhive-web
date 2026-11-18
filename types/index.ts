@@ -197,3 +197,119 @@ export interface LeaderboardEntry {
   timeTakenSec?: number;
   roll?: string;
 }
+
+// =========================================================================
+// GROUP BATTLE ENGINE TYPES (Cloudflare Durable Objects + WebSockets)
+// =========================================================================
+export type BattleMode = "RACE" | "SYNCED";
+export type BattleStatus = "waiting" | "playing" | "finished";
+export type BattleConnectionState = "DISCONNECTED" | "CONNECTING" | "CONNECTED" | "RECONNECTING";
+
+export interface BattleRules {
+  questionCount: number;
+  timePerQuestion: number;
+  posMark: number;
+  negMark: number;
+  maxPlayers: number;
+}
+
+export interface BattlePlayer {
+  uid: string;
+  name: string;
+  photoUrl?: string | null;
+  isGuest: boolean;
+  score: number;
+  qIndex: number;
+  correctCount: number;
+  wrongCount: number;
+  streak: number;
+  bestStreak: number;
+  hasFinished: boolean;
+  forfeited: boolean;
+  isOnline: boolean;
+  totalTimeMs: number;
+  rank?: number;
+  globalXP?: number;
+}
+
+export interface BattleRoomPreview {
+  roomId: string;
+  examId?: string;
+  examTitle: string;
+  hostUid?: string;
+  hostName?: string;
+  status: BattleStatus;
+  mode: BattleMode;
+  allowGuests: boolean;
+  playerCount: number;
+  rules: BattleRules;
+}
+
+export interface BattleRoomSnapshot {
+  roomId: string;
+  examId: string;
+  examTitle: string;
+  hostUid: string;
+  myUid: string;
+  status: BattleStatus;
+  mode: BattleMode;
+  allowGuests: boolean;
+  showExplanation: boolean;
+  startedAtMs: number;
+  rules: BattleRules;
+  players: BattlePlayer[];
+  questions: PublicQuestion[];
+  syncedQIndex: number;
+  syncedPhase: "QUESTION" | "REVEAL";
+  syncedDeadlineMs: number;
+  myQIndex: number;
+  myQStartedAtMs: number;
+  myScore: number;
+  myStreak: number;
+  myHasFinished: boolean;
+  myAnswers: Record<string, number>;
+  winnerUid: string | null;
+  podiumTop3: BattlePlayer[];
+  rankings: BattlePlayer[];
+  solutionsMap: Record<string, AnswerEntry>;
+}
+
+export interface BattleAnswerResult {
+  qIndex: number;
+  isCorrect: boolean;
+  isTimeout: boolean;
+  correctIndices: number[];
+  explanation: string;
+  earnedPoints: number;
+  totalScore: number;
+  streak: number;
+  nextQIndex: number;
+  qStartedAtMs: number;
+  hasFinished: boolean;
+}
+
+export interface BattleAnswerLocked {
+  qIndex: number;
+  selectedIndex: number;
+}
+
+export interface BattleSyncedReveal {
+  qIndex: number;
+  correctIndices: number[];
+  explanation: string;
+  nextAtMs: number;
+}
+
+export interface BattleReactionPopup {
+  id: string;
+  uid: string;
+  name: string;
+  emoji: string;
+}
+
+export interface BattleSpeedHighlight {
+  id: string;
+  uid: string;
+  name: string;
+  speedMs: number;
+}

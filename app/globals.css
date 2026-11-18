@@ -54,7 +54,7 @@ html.light .border-white\/10 {
   border-color: rgba(15, 23, 42, 0.12) !important;
 }
 
-html.light .text-white:not([data-card-surface="custom"]):not([data-card-surface="custom"] *):not(.bg-red-500):not(.bg-red-600):not(.bg-blue-600) {
+html.light .text-white:not([data-card-surface="custom"]):not([data-card-surface="custom"] *):not(.bg-red-500):not(.bg-red-600):not(.bg-blue-600):not(.bg-purple-600) {
   color: #111827 !important;
 }
 
@@ -88,4 +88,24 @@ html.light .text-gray-500 {
   margin: 0.5em 0 !important;
   overflow-x: auto;
   overflow-y: hidden;
+}
+
+/* Group Battle Floating Emoji Balloons */
+@keyframes floatUpEmoji {
+  0% {
+    transform: translateY(0) scale(0.85);
+    opacity: 0;
+  }
+  15% {
+    transform: translateY(-35px) scale(1.1);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-320px) scale(0.95);
+    opacity: 0;
+  }
+}
+
+.animate-float-up {
+  animation: floatUpEmoji 2.1s ease-out forwards;
 }

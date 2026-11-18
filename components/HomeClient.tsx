@@ -23,6 +23,7 @@ import {
   Play,
   Folder,
   FileText,
+  Gamepad2,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -92,6 +93,12 @@ export const HomeClient: React.FC<{ initialItems: DashboardItem[] }> = ({ initia
               className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-cyan-500/10 text-cyan-400 font-bold border border-cyan-500/20 text-sm"
             >
               <Home size={18} /> হোম ফিড
+            </Link>
+            <Link
+              href="/battle"
+              className="flex items-center gap-3 px-4 py-3 rounded-2xl text-purple-300 hover:text-white hover:bg-purple-500/15 font-bold text-sm transition border border-purple-500/20"
+            >
+              <Gamepad2 size={18} className="text-purple-400" /> গ্রুপ ব্যাটল এরিনা
             </Link>
             <Link
               href="/live"
@@ -195,7 +202,22 @@ export const HomeClient: React.FC<{ initialItems: DashboardItem[] }> = ({ initia
           )}
         </main>
 
-        <aside className="hidden xl:flex flex-col w-[300px] sticky top-20 h-[calc(100vh-100px)] gap-6">
+        <aside className="hidden xl:flex flex-col w-[300px] sticky top-20 h-[calc(100vh-100px)] gap-5">
+          <div className="bg-gradient-to-br from-purple-900/25 via-[#121218] to-cyan-900/20 border border-purple-500/35 rounded-3xl p-5 shadow-xl">
+            <h3 className="font-bold text-sm text-purple-300 flex items-center gap-2 mb-2">
+              <Gamepad2 size={17} className="text-purple-400" /> গ্রুপ ব্যাটল (2–50+ জন)
+            </h3>
+            <p className="text-xs text-gray-400 mb-4 leading-relaxed">
+              Android ও Web-এর বন্ধুদের সাথে রিয়েল-টাইম রেসিং ট্র্যাকে লাইভ কুইজ খেলুন!
+            </p>
+            <Link
+              href="/battle"
+              className="block w-full py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-center font-extrabold text-xs transition shadow-lg shadow-purple-500/20"
+            >
+              ব্যাটল এরিনায় যান ⚔️
+            </Link>
+          </div>
+
           <div className="bg-[#121218] border border-white/5 rounded-3xl p-5 shadow-xl">
             <h3 className="font-bold text-sm text-cyan-400 flex items-center gap-2 mb-3">
               <Users size={16} className="text-cyan-400" /> লাইভ ব্যাচ পরীক্ষা

@@ -21,6 +21,7 @@ import {
   Award,
   Sparkles,
   Gamepad2,
+  Users,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -184,13 +185,31 @@ export default function ProfilePage() {
               <Gamepad2 size={22} />
             </div>
             <div>
+              <h4 className="font-extrabold text-sm text-white">গ্রুপ ব্যাটল এরিনা ⚔️</h4>
+              <p className="text-[11px] text-gray-400">কোড দিয়ে ২–৫০+ জনের লাইভ ব্যাটলে জয়েন করুন</p>
+            </div>
+          </div>
+          <Link
+            href="/battle"
+            className="bg-purple-600 hover:bg-purple-500 text-white font-extrabold text-xs px-4 py-2.5 rounded-2xl transition flex-shrink-0"
+          >
+            খুলুন →
+          </Link>
+        </div>
+
+        <div className="w-full bg-[#121218] border border-cyan-500/25 rounded-3xl p-4 mb-4 flex items-center justify-between shadow-xl">
+          <div className="flex items-center gap-3">
+            <div className="p-3 bg-cyan-500/15 text-cyan-400 rounded-2xl border border-cyan-500/30">
+              <Users size={22} />
+            </div>
+            <div>
               <h4 className="font-extrabold text-sm text-white">লাইভ ব্যাচ হাব</h4>
-              <p className="text-[11px] text-gray-400">বন্ধুদের সাথে একসাথে পরীক্ষা দিন</p>
+              <p className="text-[11px] text-gray-400">ব্যাচের সবার জন্য একসাথে পরীক্ষা নিন</p>
             </div>
           </div>
           <Link
             href="/live"
-            className="bg-purple-500 hover:bg-purple-400 text-black font-extrabold text-xs px-4 py-2.5 rounded-2xl transition"
+            className="bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/40 text-cyan-400 font-extrabold text-xs px-4 py-2.5 rounded-2xl transition flex-shrink-0"
           >
             খুলুন →
           </Link>
