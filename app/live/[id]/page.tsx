@@ -29,6 +29,7 @@ export default function BatchLiveExamPage() {
 
   const [timeLeft, setTimeLeft] = useState(15 * 60);
   const [totalDuration, setTotalDuration] = useState(15 * 60);
+  const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [finalScore, setFinalScore] = useState<number | null>(null);
 
@@ -111,7 +112,7 @@ export default function BatchLiveExamPage() {
 
   const handleSubmitExam = useCallback(
     async (fromTimer = false) => {
-      if (isSubmittingRef.current) return;
+      if (isSubmittingRef.current || questions.length === 0) return;
 
       const answeredCount = Object.keys(answers).length;
       const elapsedMs = Date.now() - examStartTimeRef.current;
@@ -122,8 +123,7 @@ export default function BatchLiveExamPage() {
       }
 
       isSubmittingRef.current = true;
-      setSubmitted(true);
-      recordDailyActivity();
+      setSubmitting(true);
 
       const timeSpent = Math.max(1, totalDuration - timeLeft);
 
@@ -142,16 +142,26 @@ export default function BatchLiveExamPage() {
           },
         });
         setFinalScore(submitRes.score);
+        setSubmitted(true);
+        setSubmitting(false);
+        recordDailyActivity();
         await loadMeritList();
       } catch (e) {
         console.error("Batch result save failed:", e);
+        alert(
+          e instanceof Error
+            ? e.message
+            : "নেটওয়ার্ক সমস্যার কারণে খাতা জমা দেওয়া যায়নি। আবার চেষ্টা করুন।"
+        );
+        isSubmittingRef.current = false;
+        setSubmitting(false);
       }
     },
     [id, examTitle, name, roll, questions, answers, totalDuration, timeLeft, loadMeritList, router]
   );
 
   useEffect(() => {
-    if (!joined || submitted || questions.length === 0) return;
+    if (!joined || submitted || submitting || questions.length === 0) return;
 
     const timer = setInterval(() => {
       setTimeLeft((prev) => {
@@ -165,20 +175,24 @@ export default function BatchLiveExamPage() {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [joined, submitted, questions.length, handleSubmitExam]);
+  }, [joined, submitted, submitting, questions.length, handleSubmitExam]);
 
   const exportToCSV = () => {
     let csv = "Rank,Student Name,Roll / Phone,Score,Time (Seconds)\n";
     meritList.forEach((m, idx) => {
-      csv += `${idx + 1},"${m.name}","${m.roll}",${m.score},${m.timeTakenSec}\n`;
+      const safeName = String(m.name || "").replace(/"/g, '""');
+      const safeRoll = String(m.roll || "").replace(/"/g, '""');
+      csv += `${idx + 1},"${safeName}","${safeRoll}",${m.score},${m.timeTakenSec}\n`;
     });
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
     link.setAttribute("download", `Merit_List_${id}.csv`);
     document.body.appendChild(link);
     link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -222,10 +236,11 @@ export default function BatchLiveExamPage() {
 
               <button
                 type="button"
+                disabled={submitting}
                 onClick={() => handleSubmitExam(false)}
-                className="bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold px-4 py-2 rounded-xl text-xs transition shadow-emerald-500/20 shadow-lg"
+                className="bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-black font-extrabold px-4 py-2 rounded-xl text-xs transition shadow-emerald-500/20 shadow-lg"
               >
-                খাতা জমা
+                {submitting ? "জমা হচ্ছে..." : "খাতা জমা"}
               </button>
             </div>
           </header>
@@ -239,7 +254,7 @@ export default function BatchLiveExamPage() {
                 isFlagged={false}
                 isBookmarked={false}
                 submitted={false}
-                onSelect={(_, optIdx) => setAnswers((prev) => ({ ...prev, [currentIdx]: optIdx }))}
+                onSelect={(_, optIdx) => !submitting && setAnswers((prev) => ({ ...prev, [currentIdx]: optIdx }))}
                 onToggleFlag={() => {}}
                 onToggleBookmark={() => {}}
                 onReport={() => {}}
@@ -248,7 +263,7 @@ export default function BatchLiveExamPage() {
               <div className="flex justify-between items-center bg-[#121218] border border-white/5 rounded-2xl p-4 shadow-xl">
                 <button
                   type="button"
-                  disabled={currentIdx === 0}
+                  disabled={currentIdx === 0 || submitting}
                   onClick={() => setCurrentIdx((p) => p - 1)}
                   className="flex items-center gap-2 text-xs font-bold text-gray-400 hover:text-white disabled:opacity-30 px-3 py-2 rounded-xl hover:bg-white/5"
                 >
@@ -256,7 +271,7 @@ export default function BatchLiveExamPage() {
                 </button>
                 <button
                   type="button"
-                  disabled={currentIdx === questions.length - 1}
+                  disabled={currentIdx === questions.length - 1 || submitting}
                   onClick={() => setCurrentIdx((p) => p + 1)}
                   className="flex items-center gap-2 text-xs font-bold text-cyan-400 hover:text-cyan-300 disabled:opacity-30 px-3 py-2 rounded-xl hover:bg-white/5"
                 >
@@ -277,6 +292,13 @@ export default function BatchLiveExamPage() {
           onExportCSV={exportToCSV}
           onGoHome={() => router.push("/")}
         />
+      )}
+
+      {submitting && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex flex-col items-center justify-center gap-3">
+          <div className="w-11 h-11 border-4 border-emerald-400 border-t-transparent rounded-full animate-spin" />
+          <p className="text-sm font-extrabold text-emerald-300">উত্তরপত্র মূল্যায়ন করা হচ্ছে...</p>
+        </div>
       )}
     </div>
   );

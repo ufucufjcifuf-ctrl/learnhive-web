@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 
 export const TopProgressBar: React.FC = () => {
@@ -9,21 +9,28 @@ export const TopProgressBar: React.FC = () => {
 
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
+  const loadingRef = useRef(false);
+  const midTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const endTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    if (loading) {
+    if (loadingRef.current) {
+      if (midTimerRef.current) clearTimeout(midTimerRef.current);
+      if (endTimerRef.current) clearTimeout(endTimerRef.current);
       setProgress(100);
-      const timer = setTimeout(() => {
+      endTimerRef.current = setTimeout(() => {
+        loadingRef.current = false;
         setLoading(false);
         setProgress(0);
       }, 300);
-      return () => clearTimeout(timer);
     }
+    return () => {
+      if (endTimerRef.current) clearTimeout(endTimerRef.current);
+    };
   }, [pathname, searchParams]);
 
   useEffect(() => {
     const handleGlobalClick = (e: MouseEvent) => {
-      // বাটন নয়, শুধুমাত্র <a> লিংকে ক্লিক হলে প্রোগ্রেস বার চালু হবে
       const target = (e.target as HTMLElement).closest("a");
       if (!target) return;
 
@@ -34,14 +41,19 @@ export const TopProgressBar: React.FC = () => {
         !href.startsWith("#") &&
         target.getAttribute("target") !== "_blank"
       ) {
+        loadingRef.current = true;
         setLoading(true);
         setProgress(35);
-        setTimeout(() => setProgress(75), 150);
+        if (midTimerRef.current) clearTimeout(midTimerRef.current);
+        midTimerRef.current = setTimeout(() => setProgress(75), 150);
       }
     };
 
     document.addEventListener("click", handleGlobalClick, { capture: true });
-    return () => document.removeEventListener("click", handleGlobalClick, { capture: true });
+    return () => {
+      document.removeEventListener("click", handleGlobalClick, { capture: true });
+      if (midTimerRef.current) clearTimeout(midTimerRef.current);
+    };
   }, []);
 
   if (!loading && progress === 0) return null;

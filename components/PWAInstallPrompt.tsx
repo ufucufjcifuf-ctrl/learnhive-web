@@ -14,7 +14,6 @@ export const PWAInstallPrompt: React.FC = () => {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    // ১. ওয়েব অ্যাপ (PWA) ফোনে ইনস্টল করা থাকলে ব্যানার কখনোই আসবে না
     const isStandalone =
       window.matchMedia("(display-mode: standalone)").matches ||
       (window.navigator as any).standalone === true;
@@ -23,13 +22,11 @@ export const PWAInstallPrompt: React.FC = () => {
       return;
     }
 
-    // ২. সময় যাচাই: প্লে-স্টোর ক্লিক (৭ দিন) বা লাল ক্রস ক্লিক (৩ দিন) মেয়াদ পার হয়েছে কি না
     const muteUntil = localStorage.getItem("learnhive_prompt_mute_until");
     if (muteUntil && Date.now() < Number(muteUntil)) {
       return;
     }
 
-    // ৩. ডিভাইস সনাক্তকরণ
     const ua = navigator.userAgent || "";
     const isAndroid = /android/i.test(ua);
     const isIOS = /iPad|iPhone|iPod/.test(ua) && !(window as any).MSStream;
@@ -42,7 +39,6 @@ export const PWAInstallPrompt: React.FC = () => {
       setDeviceType("DESKTOP");
     }
 
-    // ৪. ব্রাউজার PWA ইভেন্ট ক্যাপচার
     const handleBeforeInstall = (e: any) => {
       e.preventDefault();
       setDeferredPrompt(e);
@@ -50,7 +46,6 @@ export const PWAInstallPrompt: React.FC = () => {
 
     window.addEventListener("beforeinstallprompt", handleBeforeInstall);
 
-    // ২ সেকেন্ড পর ব্যানারটি স্ক্রিনে আসবে
     const timer = setTimeout(() => {
       setShowPrompt(true);
     }, 2000);
@@ -61,23 +56,20 @@ export const PWAInstallPrompt: React.FC = () => {
     };
   }, []);
 
-  // লাল ক্রস চাপলে ব্যাকগ্রাউন্ডে ৩ দিনের জন্য ব্যানার বন্ধ হবে (স্ক্রিনে কোনো টেক্সট থাকবে না)
   const handleDismiss = () => {
     setShowPrompt(false);
-    const threeDaysMs = 3 * 24 * 60 * 60 * 1000; // ৩ দিন
+    const threeDaysMs = 3 * 24 * 60 * 60 * 1000;
     localStorage.setItem("learnhive_prompt_mute_until", String(Date.now() + threeDaysMs));
   };
 
-  // প্লে-স্টোরে ক্লিক করলে ৭ দিনের জন্য ব্যানার বন্ধ থাকবে
   const handleAndroidPlayStoreClick = () => {
-    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000; // ৭ দিন
+    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
     localStorage.setItem("learnhive_prompt_mute_until", String(Date.now() + sevenDaysMs));
     const playStoreUrl = "https://play.google.com/store/apps/details?id=com.robinsheikh.mcqhub";
     window.open(playStoreUrl, "_blank");
     setShowPrompt(false);
   };
 
-  // ওয়েব অ্যাপ ইনস্টল হ্যান্ডলার
   const handleWebPWAInstall = async () => {
     if (deferredPrompt) {
       deferredPrompt.prompt();
@@ -97,11 +89,12 @@ export const PWAInstallPrompt: React.FC = () => {
 
   return (
     <div className="fixed bottom-20 lg:bottom-6 right-4 left-4 sm:left-auto sm:w-[420px] bg-[#121218]/95 backdrop-blur-xl border border-cyan-500/40 rounded-3xl p-4 shadow-2xl shadow-cyan-500/20 z-50 animate-in slide-in-from-bottom duration-300 selection:bg-cyan-500 selection:text-black">
-      
-      {/* প্রধান ব্যানার কন্টেন্ট */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center font-black text-white text-lg shadow-lg shadow-cyan-500/30 flex-shrink-0">
+          <div
+            data-card-surface="custom"
+            className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center font-black text-white text-lg shadow-lg shadow-cyan-500/30 flex-shrink-0"
+          >
             H
           </div>
 
@@ -127,7 +120,6 @@ export const PWAInstallPrompt: React.FC = () => {
           </div>
         </div>
 
-        {/* 🔥 আপনার চাহিদামতো আকর্ষণীয় লাল রঙের ক্রস বাটন (কোনো টেক্সট ছাড়া) */}
         <button
           type="button"
           onClick={handleDismiss}
@@ -137,7 +129,6 @@ export const PWAInstallPrompt: React.FC = () => {
         </button>
       </div>
 
-      {/* অ্যাকশন বাটন সমূহ */}
       <div className="mt-3.5 pt-3 border-t border-white/5 flex flex-col gap-2">
         {deviceType === "ANDROID" ? (
           <>
@@ -174,7 +165,7 @@ export const PWAInstallPrompt: React.FC = () => {
 
             {showIOSInstructions && (
               <div className="bg-black/50 border border-white/10 rounded-xl p-3 text-[11px] text-gray-300 leading-relaxed mt-1 animate-in fade-in duration-200">
-                আইফোনে Safari ব্রাউজারের নিচের <b>Share</b> আইকন ( <Share size={11} className="inline" /> ) চাপুন, তারপর নিচে স্ক্রল করে <b>'Add to Home Screen'</b> নির্বাচন করুন।
+                আইফোনে Safari ব্রাউজারের নিচের <b>Share</b> আইকন ( <Share size={11} className="inline" /> ) চাপুন, তারপর নিচে স্ক্রল করে <b>&apos;Add to Home Screen&apos;</b> নির্বাচন করুন।
               </div>
             )}
           </>
@@ -190,7 +181,6 @@ export const PWAInstallPrompt: React.FC = () => {
           </button>
         )}
       </div>
-
     </div>
   );
 };

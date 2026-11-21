@@ -32,7 +32,10 @@ export const ExamHeader: React.FC<Props> = ({
   return (
     <>
       {isOneMinuteLeft && (
-        <div className="w-full bg-red-600/90 text-white text-xs font-bold py-2 px-4 text-center flex items-center justify-center gap-2 sticky top-0 z-50 animate-pulse">
+        <div
+          data-card-surface="custom"
+          className="w-full bg-red-600/90 text-white text-xs font-bold py-2 px-4 text-center flex items-center justify-center gap-2 sticky top-0 z-50 animate-pulse"
+        >
           <AlertTriangle size={15} /> সতর্কবার্তা: আর মাত্র ১ মিনিট বাকি আছে!
         </div>
       )}

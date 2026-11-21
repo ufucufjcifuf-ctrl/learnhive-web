@@ -11,12 +11,22 @@ export const SmartMatrixCanvas: React.FC<{ items: DashboardItem[] }> = ({ items 
   const { isPro } = useAuth();
 
   useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
     const updateWidth = () => {
-      if (containerRef.current) {
-        setContainerWidth(containerRef.current.clientWidth);
+      if (el.clientWidth > 0) {
+        setContainerWidth(el.clientWidth);
       }
     };
     updateWidth();
+
+    if (typeof ResizeObserver !== "undefined") {
+      const observer = new ResizeObserver(updateWidth);
+      observer.observe(el);
+      return () => observer.disconnect();
+    }
+
     window.addEventListener("resize", updateWidth);
     return () => window.removeEventListener("resize", updateWidth);
   }, []);
@@ -26,7 +36,7 @@ export const SmartMatrixCanvas: React.FC<{ items: DashboardItem[] }> = ({ items 
   let cursorY = 0;
   const processedItems = items
     .filter((it) => {
-      if (it.isHidden) return false;
+      if (it.isHidden || it.type === "NOTE_SHEET") return false;
       if (it.visibilityCondition === "PREMIUM_ONLY" && !isPro) return false;
       if (it.visibilityCondition === "FREE_ONLY" && isPro) return false;
       return true;

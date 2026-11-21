@@ -83,26 +83,42 @@ export async function joinBattleRoomApi(
 }
 
 const SESSION_KEY_PREFIX = "learnhive_battle_ws_";
+const SESSION_TTL_MS = 45 * 60 * 1000;
 
-export function saveBattleSession(roomId: string, wsUrl: string, myUid: string): void {
+export function saveBattleSession(
+  roomId: string,
+  wsUrl: string,
+  myUid: string,
+  guestName?: string
+): void {
   if (typeof window === "undefined") return;
   try {
     sessionStorage.setItem(
       `${SESSION_KEY_PREFIX}${roomId.toUpperCase()}`,
-      JSON.stringify({ wsUrl, myUid, savedAt: Date.now() })
+      JSON.stringify({
+        wsUrl,
+        myUid,
+        guestName: guestName?.trim() || undefined,
+        savedAt: Date.now(),
+      })
     );
   } catch {}
 }
 
 export function loadBattleSession(
   roomId: string
-): { wsUrl: string; myUid: string; savedAt: number } | null {
+): { wsUrl: string; myUid: string; guestName?: string; savedAt: number } | null {
   if (typeof window === "undefined") return null;
   try {
     const raw = sessionStorage.getItem(`${SESSION_KEY_PREFIX}${roomId.toUpperCase()}`);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as { wsUrl: string; myUid: string; savedAt: number };
-    if (Date.now() - parsed.savedAt > 2 * 60 * 60 * 1000) {
+    const parsed = JSON.parse(raw) as {
+      wsUrl: string;
+      myUid: string;
+      guestName?: string;
+      savedAt: number;
+    };
+    if (Date.now() - parsed.savedAt > SESSION_TTL_MS) {
       sessionStorage.removeItem(`${SESSION_KEY_PREFIX}${roomId.toUpperCase()}`);
       return null;
     }
@@ -136,6 +152,7 @@ export class BattleSocketManager {
   private roomId = "";
   private wsUrl = "";
   private myUid = "";
+  private guestName?: string;
   private snapshot: BattleRoomSnapshot | null = null;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -147,10 +164,11 @@ export class BattleSocketManager {
     this.callbacks = callbacks;
   }
 
-  public connect(roomId: string, wsUrl: string, myUid: string): void {
+  public connect(roomId: string, wsUrl: string, myUid: string, guestName?: string): void {
     this.roomId = roomId.trim().toUpperCase();
     this.wsUrl = wsUrl;
     this.myUid = myUid || auth.currentUser?.uid || "";
+    this.guestName = guestName;
     this.manualClose = false;
     this.reconnectAttempt = 0;
     this.openSocket(wsUrl);
@@ -209,9 +227,7 @@ export class BattleSocketManager {
       }
     };
 
-    sock.onerror = () => {
-      // onclose handles reconnect cleanly
-    };
+    sock.onerror = () => {};
   }
 
   private scheduleReconnect(): void {
@@ -237,7 +253,7 @@ export class BattleSocketManager {
     this.reconnectTimer = setTimeout(async () => {
       if (this.manualClose) return;
 
-      if (this.wsUrl && this.reconnectAttempt <= 2) {
+      if (this.wsUrl && this.reconnectAttempt <= 4) {
         this.openSocket(this.wsUrl);
         return;
       }
@@ -248,6 +264,15 @@ export class BattleSocketManager {
           this.wsUrl = joined.wsUrl;
           this.myUid = joined.uid || this.myUid;
           saveBattleSession(this.roomId, joined.wsUrl, this.myUid);
+          this.openSocket(joined.wsUrl);
+          return;
+        } catch {}
+      } else if (this.guestName && this.snapshot?.status === "waiting") {
+        try {
+          const joined = await joinBattleRoomApi(this.roomId, this.guestName);
+          this.wsUrl = joined.wsUrl;
+          this.myUid = joined.uid || this.myUid;
+          saveBattleSession(this.roomId, joined.wsUrl, this.myUid, this.guestName);
           this.openSocket(joined.wsUrl);
           return;
         } catch {}

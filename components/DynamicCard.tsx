@@ -15,7 +15,6 @@ function resolveShapeStyles(shapeType: string | undefined, radius: number): Reac
   const safeR = Math.max(0, radius);
   switch (shapeType) {
     case "CIRCLE":
-      return { borderRadius: "9999px" };
     case "CAPSULE":
       return { borderRadius: "9999px" };
     case "LEAF":
@@ -61,6 +60,16 @@ export const DynamicCard: React.FC<{ item: DashboardItem }> = ({ item }) => {
   const bgConfig = design?.background || uiStyle?.background;
   const textConf = uiStyle?.textConfig;
 
+  const isChildVisible = useCallback(
+    (ch: DashboardItem) => {
+      if (ch.isHidden || ch.type === "NOTE_SHEET") return false;
+      if (ch.visibilityCondition === "PREMIUM_ONLY" && !isPro) return false;
+      if (ch.visibilityCondition === "FREE_ONLY" && isPro) return false;
+      return true;
+    },
+    [isPro]
+  );
+
   useEffect(() => {
     const url = getSmartImageUrl(item.iconUrl);
     if (url) {
@@ -82,24 +91,27 @@ export const DynamicCard: React.FC<{ item: DashboardItem }> = ({ item }) => {
     if (isFolder && rawCmd) {
       const cleanSlug = createFolderSlug(item.title, rawCmd, item.slug);
       router.prefetch(`/f/${encodeURIComponent(cleanSlug)}`);
-    } else if (item.type === "NOTE_PDF" || item.type === "NOTE_SHEET") {
+    } else if (item.type === "NOTE_PDF") {
       const noteSlug = createNoteSlug(item.title, rawCmd, null);
-      router.prefetch(`/note/${encodeURIComponent(noteSlug)}?title=${encodeURIComponent(item.title)}&type=${item.type}`);
+      router.prefetch(
+        `/note/${encodeURIComponent(noteSlug)}?title=${encodeURIComponent(item.title)}&link=${encodeURIComponent(
+          rawCmd
+        )}`
+      );
     } else if (item.type === "HTML_PAGE") {
       router.prefetch(`/page/${encodeURIComponent(item.id)}?title=${encodeURIComponent(item.title)}`);
     }
   }, [item, router]);
 
-  // Auto-scroll for CAROUSEL items
-  const embeddedCount = item.embeddedItems?.length || 0;
+  const embeddedVisibleCount = (item.embeddedItems || []).filter(isChildVisible).length;
   useEffect(() => {
-    if (item.type !== "CAROUSEL" || embeddedCount <= 1) return;
+    if (item.type !== "CAROUSEL" || embeddedVisibleCount <= 1) return;
     const delay = uiStyle?.autoScrollDelay && uiStyle.autoScrollDelay > 0 ? uiStyle.autoScrollDelay : 3500;
     const timer = setInterval(() => {
-      setCarouselIdx((prev) => (prev + 1) % embeddedCount);
+      setCarouselIdx((prev) => (prev + 1) % embeddedVisibleCount);
     }, delay);
     return () => clearInterval(timer);
-  }, [item.type, embeddedCount, uiStyle?.autoScrollDelay]);
+  }, [item.type, embeddedVisibleCount, uiStyle?.autoScrollDelay]);
 
   const now = getServerNow();
   const isUpcoming = Boolean(item.examConfig?.startTimeMs && now < item.examConfig.startTimeMs);
@@ -122,6 +134,16 @@ export const DynamicCard: React.FC<{ item: DashboardItem }> = ({ item }) => {
         if (isLockedPremium) {
           alert("👑 এটি একটি প্রিমিয়াম পরীক্ষা। আনলক করতে PRO মেম্বারশিপ নিন!");
           router.push("/premium");
+          return;
+        }
+        if (isUpcoming && item.examConfig?.startTimeMs) {
+          const dt = new Date(item.examConfig.startTimeMs).toLocaleString("bn-BD", {
+            month: "short",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          });
+          alert(`⏳ এই পরীক্ষাটি এখনো শুরু হয়নি!\nশুরুর সময়: ${dt}`);
           return;
         }
         const examCmd = actionUri.replace("app://exam/", "");
@@ -161,17 +183,26 @@ export const DynamicCard: React.FC<{ item: DashboardItem }> = ({ item }) => {
         return;
       }
       setShowModal(true);
-    } else if (item.type === "FOLDER" || item.type.includes("SECTION") || item.type === "CAROUSEL" || item.type === "HORIZONTAL_SCROLL") {
+    } else if (
+      item.type === "FOLDER" ||
+      item.type.includes("SECTION") ||
+      item.type === "CAROUSEL" ||
+      item.type === "HORIZONTAL_SCROLL"
+    ) {
       const cleanSlug = createFolderSlug(item.title, rawCmd, item.slug);
       router.push(`/f/${encodeURIComponent(cleanSlug)}`);
-    } else if (item.type === "NOTE_PDF" || item.type === "NOTE_SHEET") {
+    } else if (item.type === "NOTE_PDF") {
       if (isLockedPremium) {
-        alert("👑 এটি একটি প্রিমিয়াম নোট। আনলক করতে PRO মেম্বারশিপ নিন!");
+        alert("👑 এটি একটি প্রিমিয়াম PDF নোট। আনলক করতে PRO মেম্বারশিপ নিন!");
         router.push("/premium");
         return;
       }
       const noteSlug = createNoteSlug(item.title, rawCmd, null);
-      router.push(`/note/${encodeURIComponent(noteSlug)}?title=${encodeURIComponent(item.title)}&type=${item.type}`);
+      router.push(
+        `/note/${encodeURIComponent(noteSlug)}?title=${encodeURIComponent(
+          item.title
+        )}&link=${encodeURIComponent(rawCmd)}`
+      );
     } else if (item.type === "HTML_PAGE") {
       if (isLockedPremium) {
         alert("👑 এটি প্রিমিয়াম কনটেন্ট। আনলক করতে PRO মেম্বারশিপ নিন!");
@@ -189,7 +220,6 @@ export const DynamicCard: React.FC<{ item: DashboardItem }> = ({ item }) => {
     }
   }, [item, isLockedPremium, isUpcoming, router]);
 
-  // Special non-card standalone layout nodes
   if (item.type === "SPACER") {
     return <div className="w-full h-full pointer-events-none" />;
   }
@@ -233,37 +263,37 @@ export const DynamicCard: React.FC<{ item: DashboardItem }> = ({ item }) => {
     );
   }
 
-  // Embedded HORIZONTAL_SCROLL strip
   if (item.type === "HORIZONTAL_SCROLL" && item.embeddedItems && item.embeddedItems.length > 0) {
-    const visibleChildren = item.embeddedItems.filter((ch) => !ch.isHidden);
-    return (
-      <div className="w-full h-full flex flex-col justify-center">
-        {item.title && (
-          <div className="flex items-center justify-between px-1 mb-2">
-            <h3 className="text-xs sm:text-sm font-extrabold text-white line-clamp-1">{item.title}</h3>
-            <button
-              type="button"
-              onClick={handleClick}
-              className="text-[11px] font-bold text-cyan-400 hover:underline flex-shrink-0"
-            >
-              সব দেখুন →
-            </button>
-          </div>
-        )}
-        <div className="flex gap-3 overflow-x-auto no-scrollbar pb-1 flex-1 items-stretch">
-          {visibleChildren.map((child) => (
-            <div key={child.id} className="w-44 sm:w-52 flex-shrink-0">
-              <DynamicCard item={child} />
+    const visibleChildren = item.embeddedItems.filter(isChildVisible);
+    if (visibleChildren.length > 0) {
+      return (
+        <div className="w-full h-full flex flex-col justify-center">
+          {item.title && (
+            <div className="flex items-center justify-between px-1 mb-2">
+              <h3 className="text-xs sm:text-sm font-extrabold text-white line-clamp-1">{item.title}</h3>
+              <button
+                type="button"
+                onClick={handleClick}
+                className="text-[11px] font-bold text-cyan-400 hover:underline flex-shrink-0"
+              >
+                সব দেখুন →
+              </button>
             </div>
-          ))}
+          )}
+          <div className="flex gap-3 overflow-x-auto no-scrollbar pb-1 flex-1 items-stretch">
+            {visibleChildren.map((child) => (
+              <div key={child.id} className="w-44 sm:w-52 flex-shrink-0">
+                <DynamicCard item={child} />
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
-    );
+      );
+    }
   }
 
-  // Embedded CAROUSEL banner slider
   if (item.type === "CAROUSEL" && item.embeddedItems && item.embeddedItems.length > 0) {
-    const visibleSlides = item.embeddedItems.filter((ch) => !ch.isHidden);
+    const visibleSlides = item.embeddedItems.filter(isChildVisible);
     if (visibleSlides.length > 0) {
       const safeIndex = carouselIdx % visibleSlides.length;
       return (
@@ -439,7 +469,6 @@ export const DynamicCard: React.FC<{ item: DashboardItem }> = ({ item }) => {
           </div>
         )}
 
-        {/* Corner icon thumbnail in STANDARD mode */}
         {!isImagePure && !isImageCover && resolvedImageUrl && (
           <img
             src={resolvedImageUrl}

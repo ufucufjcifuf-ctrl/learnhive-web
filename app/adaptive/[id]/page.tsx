@@ -19,6 +19,7 @@ export default function AdaptivePracticePage() {
 
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [canonicalExamId, setCanonicalExamId] = useState<string>(id);
   const [pools, setPools] = useState<{ A: Question[]; B: Question[]; C: Question[]; D: Question[] }>({
     A: [],
     B: [],
@@ -35,6 +36,13 @@ export default function AdaptivePracticePage() {
   const [consecutive, setConsecutive] = useState(0);
 
   const qShownAtRef = useRef<number>(Date.now());
+  const nextTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (nextTimerRef.current) clearTimeout(nextTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     async function loadQuestions() {
@@ -49,6 +57,8 @@ export default function AdaptivePracticePage() {
             { withOptionalAuth: true }
           ),
         ]);
+
+        if (qRes.examId) setCanonicalExamId(qRes.examId);
 
         const all: Question[] = (qRes.questions || []).map((pq) => {
           const ans = solRes.answersMap?.[pq.id];
@@ -140,13 +150,15 @@ export default function AdaptivePracticePage() {
         method: "POST",
         requireAuth: true,
         body: {
-          examId: id,
+          examId: canonicalExamId || id,
           difficulty: currentLevel,
           isCorrect,
           timeTakenMs,
         },
       }).catch(() => {});
     }
+
+    if (nextTimerRef.current) clearTimeout(nextTimerRef.current);
 
     if (isCorrect) {
       sounds.playCorrect();
@@ -158,16 +170,16 @@ export default function AdaptivePracticePage() {
       if (newConsecutive >= 2) {
         setConsecutive(0);
         const upMap: Record<string, "A" | "B" | "C" | "D"> = { A: "B", B: "C", C: "D", D: "D" };
-        setTimeout(() => loadNextQuestion(upMap[currentLevel]), 1800);
+        nextTimerRef.current = setTimeout(() => loadNextQuestion(upMap[currentLevel]), 1800);
       } else {
-        setTimeout(() => loadNextQuestion(currentLevel), 1800);
+        nextTimerRef.current = setTimeout(() => loadNextQuestion(currentLevel), 1800);
       }
     } else {
       sounds.playWrong();
       setStreak(0);
       setConsecutive(0);
       const downMap: Record<string, "A" | "B" | "C" | "D"> = { D: "C", C: "B", B: "A", A: "A" };
-      setTimeout(() => loadNextQuestion(downMap[currentLevel]), 2500);
+      nextTimerRef.current = setTimeout(() => loadNextQuestion(downMap[currentLevel]), 2500);
     }
   };
 

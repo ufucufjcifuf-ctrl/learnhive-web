@@ -7,6 +7,7 @@ import { PWAInstallPrompt } from "@/components/PWAInstallPrompt";
 import { BottomNavBar } from "@/components/BottomNavBar";
 import { TopProgressBar } from "@/components/TopProgressBar";
 import { ThemeProvider } from "@/components/ThemeProvider";
+import { AuthProvider } from "@/components/AuthProvider";
 import { Suspense } from "react";
 
 const geistSans = Geist({
@@ -90,13 +91,15 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-[#0A0A0E] text-white selection:bg-cyan-500 selection:text-black`}
       >
         <ThemeProvider>
-          <Suspense fallback={null}>
-            <TopProgressBar />
-          </Suspense>
-          <NetworkBanner />
-          {children}
-          <BottomNavBar />
-          <PWAInstallPrompt />
+          <AuthProvider>
+            <Suspense fallback={null}>
+              <TopProgressBar />
+            </Suspense>
+            <NetworkBanner />
+            {children}
+            <BottomNavBar />
+            <PWAInstallPrompt />
+          </AuthProvider>
         </ThemeProvider>
       </body>
     </html>

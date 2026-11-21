@@ -11,34 +11,11 @@ import { shuffleArray } from "@/lib/utils";
 import { findItemDeeply } from "@/lib/layoutService";
 import { apiFetch, ApiError, getServerNow } from "@/lib/apiClient";
 import { auth } from "@/lib/firebase";
-
-function saveWrongMistakesToLocal(wrongQuestions: Question[]): void {
-  if (typeof window === "undefined" || wrongQuestions.length === 0) return;
-  try {
-    const raw = localStorage.getItem("mcqhub_mistake_bank");
-    const existing: Question[] = raw ? (JSON.parse(raw) as Question[]) : [];
-    const map = new Map<string, Question>();
-    for (const q of existing) map.set(q.id, q);
-    for (const wq of wrongQuestions) map.set(wq.id, wq);
-    localStorage.setItem("mcqhub_mistake_bank", JSON.stringify(Array.from(map.values()).slice(-300)));
-  } catch {
-    // Ignore storage quota error
-  }
-}
-
-function removeMistakesFromLocal(ids: string[]): void {
-  if (typeof window === "undefined" || ids.length === 0) return;
-  try {
-    const raw = localStorage.getItem("mcqhub_mistake_bank");
-    if (!raw) return;
-    const existing: Question[] = JSON.parse(raw) as Question[];
-    const idSet = new Set(ids);
-    const updated = existing.filter((q) => !idSet.has(q.id));
-    localStorage.setItem("mcqhub_mistake_bank", JSON.stringify(updated));
-  } catch {
-    // Ignore
-  }
-}
+import {
+  clearExamSessionStorage,
+  removeMistakesFromLocal,
+  saveWrongMistakesToLocal,
+} from "@/lib/examStorage";
 
 export function useExamLogic(id: string) {
   const searchParams = useSearchParams();
@@ -64,6 +41,7 @@ export function useExamLogic(id: string) {
   const [flagged, setFlagged] = useState<Record<number, boolean>>({});
   const [bookmarks, setBookmarks] = useState<Record<string, boolean>>({});
   const [timeLeft, setTimeLeft] = useState(15 * 60);
+  const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [examTitle, setExamTitle] = useState<string>(queryTitle || "Online Model Test");
 
@@ -84,6 +62,7 @@ export function useExamLogic(id: string) {
   const examStartTimeRef = useRef<number>(Date.now());
   const totalDurationSecRef = useRef<number>(15 * 60);
   const handleSubmitExamRef = useRef<(fromTimer?: boolean) => void>(() => {});
+  const cachedSolutionsRef = useRef<Record<string, AnswerEntry>>({});
 
   useEffect(() => {
     if (!submitted) {
@@ -115,8 +94,8 @@ export function useExamLogic(id: string) {
       setLoading(true);
       setFetchError(null);
       try {
-        // 1. Mistake Revision Mode (100% Local Processing)
         if (isMistakeRevision) {
+          clearExamSessionStorage(decodedRawId);
           const stored = sessionStorage.getItem("mcqhub_revision_questions");
           if (stored) {
             let list: Question[] = JSON.parse(stored);
@@ -130,7 +109,7 @@ export function useExamLogic(id: string) {
             targetEndTimeRef.current = Date.now() + totalSec * 1000;
             examStartTimeRef.current = Date.now();
           } else {
-            setFetchError("রিভিশনের জন্য কোনো ভুল প্রশ্ন নির্বাচন করা হয়নি।");
+            setFetchError("রিভিশনের জন্য কোনো প্রশ্ন নির্বাচন করা হয়নি।");
           }
           setLoading(false);
           return;
@@ -139,7 +118,6 @@ export function useExamLogic(id: string) {
         let loadedQuestions: Question[] = [];
         let configDuration = queryDuration;
 
-        // 2. Custom Multi-Chapter Mode (Per-Chapter Edge-Cached Fetch -> 0ms Worker CPU!)
         if (isCustomExam) {
           const specs = decodedRawId
             .split(",")
@@ -197,7 +175,6 @@ export function useExamLogic(id: string) {
             loadedQuestions = loadedQuestions.slice(0, queryLimit);
           }
         } else {
-          // 3. Official / Single Exam (Zero-Parse Edge-Cached Call 1!)
           let targetId = decodedRawId;
           const matchedItem = await findItemDeeply(decodedRawId).catch(() => null);
           if (matchedItem) {
@@ -244,7 +221,6 @@ export function useExamLogic(id: string) {
             explanation: "",
           }));
 
-          // Client-side difficulty, shuffle & limit (keeps Worker 100% Edge-Cached!)
           if (queryDiff !== "ALL") {
             const targetQs = qs.filter((q) => q.difficulty === queryDiff);
             if (queryLimit > 0 && targetQs.length < queryLimit) {
@@ -320,23 +296,31 @@ export function useExamLogic(id: string) {
     }
 
     if (id) fetchExam();
-  }, [id, decodedRawId, isCustomExam, isMistakeRevision, queryTitle, queryDiff, queryShuffle, queryLimit, queryDuration, searchParams]);
+  }, [
+    id,
+    decodedRawId,
+    isCustomExam,
+    isMistakeRevision,
+    queryTitle,
+    queryDiff,
+    queryShuffle,
+    queryLimit,
+    queryDuration,
+    searchParams,
+  ]);
 
   const handleSelectOption = useCallback(
     (qIdx: number, optIdx: number) => {
       sounds.playClick();
       setAnswers((prev) => {
         const updated = { ...prev, [qIdx]: optIdx };
-        if (typeof window !== "undefined") {
-          localStorage.setItem(
-            `mcq_active_answers_${decodeURIComponent(id).trim()}`,
-            JSON.stringify(updated)
-          );
+        if (typeof window !== "undefined" && !isMistakeRevision) {
+          localStorage.setItem(`mcq_active_answers_${decodedRawId}`, JSON.stringify(updated));
         }
         return updated;
       });
     },
-    [id]
+    [decodedRawId, isMistakeRevision]
   );
 
   const toggleFlag = useCallback((qIdx: number) => {
@@ -345,7 +329,7 @@ export function useExamLogic(id: string) {
   }, []);
 
   const toggleBookmark = useCallback(
-    (q: Question) => {
+    async (q: Question) => {
       const serverNow = getServerNow();
       const isLiveRunning = Boolean(liveEndTime && serverNow < liveEndTime);
       if (hideSolutionUntilLiveEnds && isLiveRunning) {
@@ -353,58 +337,106 @@ export function useExamLogic(id: string) {
         return;
       }
 
-      sounds.playClick();
-      setBookmarks((prev) => {
-        const isCurrentlySaved = Boolean(prev[q.id]);
-        const updated = { ...prev, [q.id]: !isCurrentlySaved };
+      const isCurrentlySaved = Boolean(bookmarks[q.id]);
+      const nextSavedState = !isCurrentlySaved;
+      let questionToSave = q;
 
-        if (typeof window !== "undefined") {
+      if (
+        nextSavedState &&
+        !isMistakeRevision &&
+        q.correctOptionIndex === -1 &&
+        (!q.correctOptionIndices || q.correctOptionIndices.length === 0)
+      ) {
+        let cachedAns = cachedSolutionsRef.current[q.id];
+        if (!cachedAns) {
+          const targetIds = isCustomExam ? customChapterIds : [canonicalExamId];
           try {
-            const stored = localStorage.getItem("mcqhub_saved_questions_detail");
-            let savedList: Question[] = stored ? JSON.parse(stored) : [];
-
-            if (!isCurrentlySaved) {
-              if (!savedList.some((item) => item.id === q.id)) {
-                savedList.push(q);
-              }
-            } else {
-              savedList = savedList.filter((item) => item.id !== q.id);
+            const bundles = await Promise.all(
+              targetIds.map((chId) =>
+                apiFetch<{ success: boolean; answersMap: Record<string, AnswerEntry> }>(
+                  `/api/exam/solutions?id=${encodeURIComponent(chId)}`,
+                  { withOptionalAuth: true }
+                )
+              )
+            );
+            for (const b of bundles) {
+              if (b?.answersMap) Object.assign(cachedSolutionsRef.current, b.answersMap);
             }
-
-            localStorage.setItem("mcqhub_saved_questions_detail", JSON.stringify(savedList));
-          } catch (e) {
-            console.error("Bookmark Save Error:", e);
+            cachedAns = cachedSolutionsRef.current[q.id];
+          } catch (err) {
+            if (err instanceof ApiError && err.status === 403) {
+              alert("⚠️ লাইভ পরীক্ষা শেষ না হওয়া পর্যন্ত উত্তরসহ বুকমার্ক লক রয়েছে!");
+              return;
+            }
           }
         }
+        if (cachedAns) {
+          questionToSave = {
+            ...q,
+            correctOptionIndex: cachedAns.i,
+            correctOptionIndices: cachedAns.c,
+            explanation: cachedAns.e,
+          };
+        }
+      }
 
-        if (auth.currentUser) {
-          if (!isCurrentlySaved) {
-            apiFetch("/api/user/bookmarks", {
-              method: "POST",
-              requireAuth: true,
-              body: {
-                questionId: q.id,
-                questionJson: JSON.stringify(q),
-                subject: examTitle,
-              },
-            }).catch(() => {});
+      sounds.playClick();
+      setBookmarks((prev) => ({ ...prev, [q.id]: nextSavedState }));
+
+      if (typeof window !== "undefined") {
+        try {
+          const stored = localStorage.getItem("mcqhub_saved_questions_detail");
+          let savedList: Question[] = stored ? JSON.parse(stored) : [];
+
+          if (nextSavedState) {
+            if (!savedList.some((item) => item.id === q.id)) {
+              savedList.push(questionToSave);
+            }
           } else {
-            apiFetch(`/api/user/bookmarks?questionId=${encodeURIComponent(q.id)}`, {
-              method: "DELETE",
-              requireAuth: true,
-            }).catch(() => {});
+            savedList = savedList.filter((item) => item.id !== q.id);
           }
-        }
 
-        return updated;
-      });
+          localStorage.setItem("mcqhub_saved_questions_detail", JSON.stringify(savedList));
+        } catch (e) {
+          console.error("Bookmark Save Error:", e);
+        }
+      }
+
+      if (auth.currentUser) {
+        if (nextSavedState) {
+          apiFetch("/api/user/bookmarks", {
+            method: "POST",
+            requireAuth: true,
+            body: {
+              questionId: q.id,
+              questionJson: JSON.stringify(questionToSave),
+              subject: examTitle,
+            },
+          }).catch(() => {});
+        } else {
+          apiFetch(`/api/user/bookmarks?questionId=${encodeURIComponent(q.id)}`, {
+            method: "DELETE",
+            requireAuth: true,
+          }).catch(() => {});
+        }
+      }
     },
-    [examTitle, hideSolutionUntilLiveEnds, liveEndTime]
+    [
+      bookmarks,
+      examTitle,
+      hideSolutionUntilLiveEnds,
+      liveEndTime,
+      isMistakeRevision,
+      isCustomExam,
+      customChapterIds,
+      canonicalExamId,
+    ]
   );
 
   const calculateFinalScore = useCallback(() => {
     let correct = 0;
     let wrong = 0;
+    let skipped = 0;
     let totalScore = 0;
 
     questions.forEach((q, idx) => {
@@ -419,37 +451,34 @@ export function useExamLogic(id: string) {
           ? [q.correctOptionIndex]
           : [];
 
-      const isBonus = (q.options || []).length > 0 && correctAnswers.length === 0;
+      const isBonus =
+        submitted && !isMistakeRevision && (q.options || []).length > 0 && correctAnswers.length === 0;
 
       if (isBonus) {
         correct++;
         totalScore += pos;
-      } else if (selected !== undefined) {
-        if (correctAnswers.includes(selected)) {
-          correct++;
-          totalScore += pos;
-        } else {
-          wrong++;
-          totalScore -= neg;
-        }
+      } else if (selected === undefined || !submitted || correctAnswers.length === 0) {
+        skipped++;
+      } else if (correctAnswers.includes(selected)) {
+        correct++;
+        totalScore += pos;
+      } else {
+        wrong++;
+        totalScore -= neg;
       }
     });
 
     return {
       correct,
       wrong,
-      skipped: questions.length - (correct + wrong),
+      skipped,
       score: totalScore,
       total: questions.length,
     };
-  }, [questions, answers, posMarkState, negMarkState]);
+  }, [questions, answers, posMarkState, negMarkState, submitted, isMistakeRevision]);
 
   const clearActiveExamSession = useCallback(() => {
-    if (typeof window !== "undefined") {
-      localStorage.removeItem(`mcq_active_start_${decodedRawId}`);
-      localStorage.removeItem(`mcq_active_end_${decodedRawId}`);
-      localStorage.removeItem(`mcq_active_answers_${decodedRawId}`);
-    }
+    clearExamSessionStorage(decodedRawId);
   }, [decodedRawId]);
 
   const handleSubmitExam = useCallback(
@@ -459,7 +488,6 @@ export function useExamLogic(id: string) {
       const answeredCount = Object.keys(answers).length;
       const timeSpentMs = Date.now() - examStartTimeRef.current;
 
-      // 5-Second Anti-Cheat Speed Trap (Exact Android Parity)
       if (!fromTimer && answeredCount >= 5 && timeSpentMs < 5000) {
         clearActiveExamSession();
         alert("⚠️ Security Alert: অস্বাভাবিক দ্রুত উত্তর প্রদানের কারণে পরীক্ষা বাতিল করা হয়েছে!");
@@ -468,11 +496,9 @@ export function useExamLogic(id: string) {
       }
 
       isSubmittingRef.current = true;
-      setSubmitted(true);
-      clearActiveExamSession();
+      setSubmitting(true);
 
       const timeTakenSec = Math.max(1, Math.round(timeSpentMs / 1000));
-      recordDailyActivity();
 
       let finalCorrect = 0;
       let finalWrong = 0;
@@ -481,21 +507,28 @@ export function useExamLogic(id: string) {
       let finalGlobalXP = 0;
       let solvedQuestions = questions;
       let finalIsSolutionLocked = false;
+      let finalIsExplanationLocked = false;
       let finalLiveEnd: number | null = liveEndTime ? liveEndTime + 300_000 : null;
 
       try {
         if (isCustomExam || isMistakeRevision) {
-          // Client-side zero-CPU grading using Edge-Cached /api/exam/solutions
           const mergedAnsMap: Record<string, AnswerEntry> = {};
 
           if (isCustomExam && customChapterIds.length > 0) {
             const solResults = await Promise.all(
-              customChapterIds.map((chId) =>
-                apiFetch<{ success: boolean; answersMap: Record<string, AnswerEntry> }>(
-                  `/api/exam/solutions?id=${encodeURIComponent(chId)}`,
-                  { withOptionalAuth: true }
-                ).catch(() => null)
-              )
+              customChapterIds.map(async (chId) => {
+                try {
+                  return await apiFetch<{ success: boolean; answersMap: Record<string, AnswerEntry> }>(
+                    `/api/exam/solutions?id=${encodeURIComponent(chId)}`,
+                    { withOptionalAuth: true }
+                  );
+                } catch (err) {
+                  if (err instanceof ApiError && err.status === 403) {
+                    return null;
+                  }
+                  throw err;
+                }
+              })
             );
             for (const sr of solResults) {
               if (sr?.answersMap) Object.assign(mergedAnsMap, sr.answersMap);
@@ -506,7 +539,13 @@ export function useExamLogic(id: string) {
           const correctedIds: string[] = [];
 
           solvedQuestions = questions.map((q, idx) => {
-            const ans = mergedAnsMap[q.id];
+            const ans = isCustomExam ? mergedAnsMap[q.id] : undefined;
+
+            if (isCustomExam && !ans) {
+              finalSkipped++;
+              return q;
+            }
+
             const hydratedQ: Question = ans
               ? {
                   ...q,
@@ -526,6 +565,11 @@ export function useExamLogic(id: string) {
                 : hydratedQ.correctOptionIndex !== -1
                 ? [hydratedQ.correctOptionIndex]
                 : [];
+
+            if (isMistakeRevision && correctAnswers.length === 0) {
+              finalSkipped++;
+              return hydratedQ;
+            }
 
             const isBonus = hydratedQ.options.length > 0 && correctAnswers.length === 0;
 
@@ -594,7 +638,6 @@ export function useExamLogic(id: string) {
             }).catch(() => {});
           }
         } else {
-          // Official / Live Exam -> Authoritative Server Grading via POST /api/exam/submit
           const submitRes = await apiFetch<{
             success: boolean;
             total: number;
@@ -604,6 +647,7 @@ export function useExamLogic(id: string) {
             score: number;
             globalXP: number;
             isSolutionLocked: boolean;
+            isExplanationLocked?: boolean;
             liveEndTimeMs: number | null;
             solutions: Record<string, AnswerEntry>;
           }>("/api/exam/submit", {
@@ -626,6 +670,7 @@ export function useExamLogic(id: string) {
           finalScore = submitRes.score;
           finalGlobalXP = submitRes.globalXP;
           finalIsSolutionLocked = submitRes.isSolutionLocked;
+          finalIsExplanationLocked = Boolean(submitRes.isExplanationLocked);
           finalLiveEnd = submitRes.liveEndTimeMs ? submitRes.liveEndTimeMs + 300_000 : null;
 
           const wrongList: Question[] = [];
@@ -642,7 +687,8 @@ export function useExamLogic(id: string) {
 
             const selected = answers[idx];
             if (ans && selected !== undefined) {
-              const correctAnswers = ans.c && ans.c.length > 0 ? ans.c : ans.i !== -1 ? [ans.i] : [];
+              const correctAnswers =
+                ans.c && ans.c.length > 0 ? ans.c : ans.i !== -1 ? [ans.i] : [];
               if (correctAnswers.length > 0 && !correctAnswers.includes(selected)) {
                 wrongList.push(hydrated);
               }
@@ -656,11 +702,21 @@ export function useExamLogic(id: string) {
         }
       } catch (err) {
         console.error("Exam submit error:", err);
-        alert(err instanceof Error ? err.message : "পরীক্ষা সাবমিট করতে সমস্যা হয়েছে।");
+        alert(
+          err instanceof Error
+            ? err.message
+            : "নেটওয়ার্ক সমস্যার কারণে পরীক্ষা সাবমিট হয়নি। আবার চেষ্টা করুন।"
+        );
         isSubmittingRef.current = false;
-        setSubmitted(false);
+        setSubmitting(false);
         return;
       }
+
+      setQuestions(solvedQuestions);
+      setSubmitted(true);
+      setSubmitting(false);
+      clearActiveExamSession();
+      recordDailyActivity();
 
       if (typeof window !== "undefined") {
         saveExamHistory({
@@ -685,24 +741,31 @@ export function useExamLogic(id: string) {
           total: questions.length,
           globalXP: finalGlobalXP,
           isSolutionLocked: finalIsSolutionLocked,
+          isExplanationLocked: finalIsExplanationLocked,
           liveEndTime: finalLiveEnd,
           hideSolutionUntilLiveEnds: finalIsSolutionLocked || hideSolutionUntilLiveEnds,
         };
 
-        sessionStorage.setItem(`mcqhub_review_${id}`, JSON.stringify(reviewPayload));
+        sessionStorage.setItem(`mcqhub_review_${decodedRawId}`, JSON.stringify(reviewPayload));
         sessionStorage.setItem(`mcqhub_review_${canonicalExamId}`, JSON.stringify(reviewPayload));
         localStorage.setItem(`mcqhub_persisted_review_${decodedRawId}`, JSON.stringify(reviewPayload));
-        localStorage.setItem(`mcqhub_persisted_review_${canonicalExamId}`, JSON.stringify(reviewPayload));
+        localStorage.setItem(
+          `mcqhub_persisted_review_${canonicalExamId}`,
+          JSON.stringify(reviewPayload)
+        );
 
         router.replace(
-          `/result?id=${encodeURIComponent(id)}&canonicalId=${encodeURIComponent(
+          `/result?id=${encodeURIComponent(decodedRawId)}&canonicalId=${encodeURIComponent(
             canonicalExamId
-          )}&title=${encodeURIComponent(examTitle)}&score=${finalScore.toFixed(2)}&correct=${finalCorrect}&wrong=${finalWrong}&skipped=${finalSkipped}&total=${questions.length}&xp=${finalGlobalXP.toFixed(2)}`
+          )}&title=${encodeURIComponent(examTitle)}&score=${finalScore.toFixed(
+            2
+          )}&correct=${finalCorrect}&wrong=${finalWrong}&skipped=${finalSkipped}&total=${
+            questions.length
+          }&xp=${finalGlobalXP.toFixed(2)}`
         );
       }
     },
     [
-      id,
       decodedRawId,
       canonicalExamId,
       examTitle,
@@ -726,7 +789,7 @@ export function useExamLogic(id: string) {
   }, [handleSubmitExam]);
 
   useEffect(() => {
-    if (loading || submitted || questions.length === 0) return;
+    if (loading || submitted || submitting || questions.length === 0) return;
 
     const interval = setInterval(() => {
       const remaining = Math.max(0, Math.floor((targetEndTimeRef.current - Date.now()) / 1000));
@@ -739,7 +802,7 @@ export function useExamLogic(id: string) {
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [loading, submitted, questions.length]);
+  }, [loading, submitted, submitting, questions.length]);
 
   return {
     questions,
@@ -749,6 +812,7 @@ export function useExamLogic(id: string) {
     flagged,
     bookmarks,
     timeLeft,
+    submitting,
     submitted,
     examTitle,
     canonicalExamId,

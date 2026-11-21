@@ -8,14 +8,14 @@ import { School, Trophy, Headset, User } from "lucide-react";
 export const BottomNavBar: React.FC = () => {
   const pathname = usePathname();
 
-  // পরীক্ষা, রিভিউ ও চলমান গ্রুপ ব্যাটল রুমে বটম বার বন্ধ থাকবে
   if (
     pathname.startsWith("/exam/") ||
     pathname.startsWith("/result") ||
     pathname.startsWith("/review/") ||
     pathname.startsWith("/video/") ||
     pathname.startsWith("/adaptive/") ||
-    pathname.startsWith("/battle/")
+    pathname.startsWith("/battle/") ||
+    pathname.startsWith("/live/")
   ) {
     return null;
   }

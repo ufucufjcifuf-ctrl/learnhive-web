@@ -1,12 +1,14 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { AnswerEntry, Question } from "@/types";
 import { MathText } from "@/components/MathText";
 import { ReportModal } from "@/components/ReportModal";
 import { apiFetch, getServerNow, syncServerTime } from "@/lib/apiClient";
 import { auth } from "@/lib/firebase";
+import { useAuth } from "@/lib/useAuth";
 import {
   ArrowLeft,
   CheckCircle2,
@@ -17,6 +19,7 @@ import {
   Clock,
   AlertCircle,
   Home,
+  Sparkles,
 } from "lucide-react";
 
 interface ReviewData {
@@ -28,6 +31,7 @@ interface ReviewData {
   wrong: number;
   skipped: number;
   isSolutionLocked?: boolean;
+  isExplanationLocked?: boolean;
   liveEndTime?: number | null;
   hideSolutionUntilLiveEnds?: boolean;
 }
@@ -35,6 +39,7 @@ interface ReviewData {
 export default function ReviewScreen() {
   const { id } = useParams();
   const router = useRouter();
+  const { isPro } = useAuth();
 
   const [data, setData] = useState<ReviewData | null>(null);
   const [filter, setFilter] = useState<"ALL" | "WRONG" | "SKIPPED" | "CORRECT">("ALL");
@@ -43,12 +48,18 @@ export default function ReviewScreen() {
   const [currentTime, setCurrentTime] = useState<number>(getServerNow());
   const [hydratingSolutions, setHydratingSolutions] = useState(false);
 
+  const liveHydrationTriedRef = useRef(false);
+  const proHydrationTriedRef = useRef(false);
+
   useEffect(() => {
     syncServerTime().then((t) => setCurrentTime(t));
+    liveHydrationTriedRef.current = false;
+    proHydrationTriedRef.current = false;
 
     if (typeof window !== "undefined") {
-      const decodedId = decodeURIComponent(String(id));
+      const decodedId = decodeURIComponent(String(id)).trim();
       const stored =
+        sessionStorage.getItem(`mcqhub_review_${decodedId}`) ||
         sessionStorage.getItem(`mcqhub_review_${id}`) ||
         localStorage.getItem(`mcqhub_persisted_review_${decodedId}`);
 
@@ -83,53 +94,69 @@ export default function ReviewScreen() {
     return () => clearInterval(timer);
   }, []);
 
-  const unlockDeadline = data?.liveEndTime ? data.liveEndTime + 300_000 : 0;
+  const unlockDeadline = data?.liveEndTime || 0;
   const isLocked = Boolean(
     data?.hideSolutionUntilLiveEnds && data?.liveEndTime && currentTime < unlockDeadline
   );
 
-  // Auto-hydrate answers & explanations from Worker once Live Exam ends
   useEffect(() => {
-    if (!data || isLocked || !data.isSolutionLocked || hydratingSolutions) return;
+    if (!data || isLocked) return;
+    const needsLiveHydration = Boolean(data.isSolutionLocked) && !liveHydrationTriedRef.current;
+    const needsProExplanationHydration =
+      Boolean(data.isExplanationLocked && isPro) && !proHydrationTriedRef.current;
+
+    if (!needsLiveHydration && !needsProExplanationHydration) return;
 
     const targetExamId = data.examId || decodeURIComponent(String(id));
-    if (!targetExamId || targetExamId === "MISTAKE_REVISION") return;
+    if (!targetExamId || targetExamId === "MISTAKE_REVISION" || targetExamId === "CUSTOM_EXAM") return;
 
+    if (needsLiveHydration) liveHydrationTriedRef.current = true;
+    if (needsProExplanationHydration) proHydrationTriedRef.current = true;
+
+    let cancelled = false;
     setHydratingSolutions(true);
-    apiFetch<{ success: boolean; answersMap: Record<string, AnswerEntry> }>(
-      `/api/exam/solutions?id=${encodeURIComponent(targetExamId)}`,
-      { withOptionalAuth: true }
-    )
+
+    apiFetch<{
+      success: boolean;
+      isExplanationLocked?: boolean;
+      answersMap: Record<string, AnswerEntry>;
+    }>(`/api/exam/solutions?id=${encodeURIComponent(targetExamId)}`, { withOptionalAuth: true })
       .then((res) => {
-        if (res?.answersMap) {
-          const hydratedQuestions = data.questions.map((q) => {
-            const ans = res.answersMap[q.id];
-            return ans
-              ? {
-                  ...q,
-                  correctOptionIndex: ans.i,
-                  correctOptionIndices: ans.c,
-                  explanation: ans.e,
-                }
-              : q;
-          });
-          const updated: ReviewData = {
-            ...data,
-            questions: hydratedQuestions,
-            isSolutionLocked: false,
-            hideSolutionUntilLiveEnds: false,
-          };
-          setData(updated);
-          if (typeof window !== "undefined") {
-            const decodedId = decodeURIComponent(String(id));
-            sessionStorage.setItem(`mcqhub_review_${id}`, JSON.stringify(updated));
-            localStorage.setItem(`mcqhub_persisted_review_${decodedId}`, JSON.stringify(updated));
-          }
+        if (cancelled || !res?.answersMap) return;
+        const hydratedQuestions = data.questions.map((q) => {
+          const ans = res.answersMap[q.id];
+          return ans
+            ? {
+                ...q,
+                correctOptionIndex: ans.i,
+                correctOptionIndices: ans.c,
+                explanation: ans.e,
+              }
+            : q;
+        });
+        const updated: ReviewData = {
+          ...data,
+          questions: hydratedQuestions,
+          isSolutionLocked: false,
+          isExplanationLocked: Boolean(res.isExplanationLocked),
+          hideSolutionUntilLiveEnds: false,
+        };
+        setData(updated);
+        if (typeof window !== "undefined") {
+          const decodedId = decodeURIComponent(String(id)).trim();
+          sessionStorage.setItem(`mcqhub_review_${decodedId}`, JSON.stringify(updated));
+          localStorage.setItem(`mcqhub_persisted_review_${decodedId}`, JSON.stringify(updated));
         }
       })
       .catch(() => {})
-      .finally(() => setHydratingSolutions(false));
-  }, [data, isLocked, id, hydratingSolutions]);
+      .finally(() => {
+        if (!cancelled) setHydratingSolutions(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [data, isLocked, isPro, id]);
 
   const toggleBookmark = (q: Question) => {
     const isCurrentlySaved = Boolean(bookmarks[q.id]);
@@ -322,6 +349,24 @@ export default function ReviewScreen() {
           </button>
         </div>
 
+        {data.isExplanationLocked && !isPro && (
+          <Link
+            href="/premium"
+            className="mb-6 bg-amber-500/10 border border-amber-500/40 rounded-2xl p-4 flex items-center justify-between gap-3 hover:border-amber-400 transition"
+          >
+            <div className="flex items-center gap-3">
+              <Sparkles size={20} className="text-amber-400 flex-shrink-0" />
+              <div className="text-xs">
+                <p className="font-extrabold text-amber-300">ব্যাখ্যাগুলো প্রিমিয়াম মেম্বারদের জন্য সংরক্ষিত</p>
+                <p className="text-gray-400 mt-0.5">প্রতিটি প্রশ্নের বিস্তারিত সমাধান ও ব্যাখ্যা আনলক করতে PRO নিন।</p>
+              </div>
+            </div>
+            <span className="bg-amber-400 text-black font-black text-[11px] px-3 py-1.5 rounded-xl flex-shrink-0">
+              PRO নিন 👑
+            </span>
+          </Link>
+        )}
+
         {hydratingSolutions && (
           <div className="mb-4 text-center text-xs text-cyan-400 font-bold animate-pulse">
             সার্ভার থেকে সমাধান লোড হচ্ছে...
@@ -370,7 +415,7 @@ export default function ReviewScreen() {
                             : "bg-red-500/10 text-red-400"
                         }`}
                       >
-                        {!isAnswered ? "স্কিপড" : isCorrect ? "+১.০০ (সঠিক)" : "-০.২৫ (ভুল)"}
+                        {!isAnswered ? "স্কিপড" : isCorrect ? "সঠিক" : "ভুল"}
                       </span>
                       {isBonus && (
                         <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/30">
@@ -446,14 +491,24 @@ export default function ReviewScreen() {
                     })}
                   </div>
 
-                  {q.explanation && (
+                  {q.explanation ? (
                     <div className="mt-5 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-200 text-xs leading-relaxed">
                       <span className="font-bold flex items-center gap-1.5 text-amber-400 mb-1">
                         <Check size={14} /> সঠিক উত্তর ও ব্যাখ্যা:
                       </span>
                       <MathText text={q.explanation} />
                     </div>
-                  )}
+                  ) : data.isExplanationLocked && !isPro ? (
+                    <Link
+                      href="/premium"
+                      className="mt-5 p-3.5 rounded-2xl bg-white/5 border border-amber-500/25 text-amber-300 text-xs font-bold flex items-center justify-between"
+                    >
+                      <span className="flex items-center gap-2">
+                        <Lock size={14} /> ব্যাখ্যা দেখতে PRO আনলক করুন
+                      </span>
+                      <span>→</span>
+                    </Link>
+                  ) : null}
                 </div>
               );
             })}

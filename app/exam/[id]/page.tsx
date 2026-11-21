@@ -25,6 +25,7 @@ export default function ExamScreen() {
     flagged,
     bookmarks,
     timeLeft,
+    submitting,
     submitted,
     examTitle,
     liveEndTime,
@@ -50,9 +51,10 @@ export default function ExamScreen() {
 
   const onSelectHandler = useCallback(
     (index: number, optIdx: number) => {
+      if (submitting) return;
       handleSelectOption(index, optIdx);
     },
-    [handleSelectOption]
+    [handleSelectOption, submitting]
   );
 
   const onFlagHandler = useCallback(
@@ -74,12 +76,13 @@ export default function ExamScreen() {
   }, []);
 
   const handleConfirmSubmit = useCallback(() => {
+    if (submitting) return;
     setShowSubmitModal(false);
     handleSubmitExam(false);
     if (typeof window !== "undefined") {
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
-  }, [handleSubmitExam]);
+  }, [handleSubmitExam, submitting]);
 
   if (loading) {
     return (
@@ -118,9 +121,9 @@ export default function ExamScreen() {
         submitted={submitted}
         isListView={isListView}
         setIsListView={setIsListView}
-        onExitClick={() => (submitted ? router.push("/") : setShowExitModal(true))}
-        onOverviewClick={() => setShowOverviewModal(true)}
-        onSubmitClick={() => setShowSubmitModal(true)}
+        onExitClick={() => (submitted ? router.push("/") : !submitting && setShowExitModal(true))}
+        onOverviewClick={() => !submitting && setShowOverviewModal(true)}
+        onSubmitClick={() => !submitting && setShowSubmitModal(true)}
       />
 
       {submitted && (
@@ -168,7 +171,7 @@ export default function ExamScreen() {
             <div className="flex justify-between items-center bg-[#121218] border border-white/5 rounded-2xl p-4 shadow-xl">
               <button
                 type="button"
-                disabled={currentIdx === 0}
+                disabled={currentIdx === 0 || submitting}
                 onClick={() => {
                   sounds.playClick();
                   setCurrentIdx((p) => p - 1);
@@ -180,22 +183,24 @@ export default function ExamScreen() {
               {currentIdx === questions.length - 1 ? (
                 <button
                   type="button"
+                  disabled={submitting}
                   onClick={() => {
                     sounds.playClick();
                     setShowSubmitModal(true);
                   }}
-                  className="bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold px-4 py-2 rounded-xl text-xs transition"
+                  className="bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-black font-extrabold px-4 py-2 rounded-xl text-xs transition"
                 >
-                  খাতা জমা
+                  {submitting ? "সাবমিট হচ্ছে..." : "খাতা জমা"}
                 </button>
               ) : (
                 <button
                   type="button"
+                  disabled={submitting}
                   onClick={() => {
                     sounds.playClick();
                     setCurrentIdx((p) => p + 1);
                   }}
-                  className="flex items-center gap-2 text-xs font-bold text-cyan-400 hover:text-cyan-300 px-3 py-2 rounded-xl hover:bg-white/5 transition"
+                  className="flex items-center gap-2 text-xs font-bold text-cyan-400 hover:text-cyan-300 disabled:opacity-50 px-3 py-2 rounded-xl hover:bg-white/5 transition"
                 >
                   পরের প্রশ্ন <ArrowRight size={16} />
                 </button>
@@ -204,6 +209,13 @@ export default function ExamScreen() {
           </div>
         )}
       </main>
+
+      {submitting && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex flex-col items-center justify-center gap-3">
+          <div className="w-11 h-11 border-4 border-emerald-400 border-t-transparent rounded-full animate-spin" />
+          <p className="text-sm font-extrabold text-emerald-300">উত্তরপত্র মূল্যায়ন করা হচ্ছে...</p>
+        </div>
+      )}
 
       <ExamOverviewModal
         isOpen={showOverviewModal}

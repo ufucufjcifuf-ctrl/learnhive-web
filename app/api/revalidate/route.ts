@@ -1,26 +1,37 @@
 import { NextRequest, NextResponse } from "next/server";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 
-export async function GET(request: NextRequest) {
-  const secret = request.nextUrl.searchParams.get("secret");
-  // সিক্রেট টোকেন (নিরাপত্তার জন্য)
-  const expectedSecret = process.env.REVALIDATION_SECRET_TOKEN || "learnhive_secret_2026";
+export async function POST(request: NextRequest) {
+  const expectedSecret = process.env.REVALIDATION_SECRET_TOKEN?.trim();
+  if (!expectedSecret) {
+    return NextResponse.json(
+      { message: "REVALIDATION_SECRET_TOKEN is not configured on server" },
+      { status: 500 }
+    );
+  }
 
-  if (secret !== expectedSecret) {
-    return NextResponse.json({ message: "Invalid secret token" }, { status: 401 });
+  const authHeader = request.headers.get("authorization") || "";
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+
+  if (!token || token !== expectedSecret) {
+    return NextResponse.json({ message: "Unauthorized revalidation request" }, { status: 401 });
   }
 
   try {
-    // সম্পূর্ণ সাইট, লেআউট ও সাইটম্যাপের ক্যাশ ক্লিয়ার করে নতুন করে ডাটা রেন্ডার করবে
+    revalidateTag("layout", { expire: 0 });
+    revalidateTag("exams", { expire: 0 });
     revalidatePath("/", "layout");
     revalidatePath("/sitemap.xml");
 
     return NextResponse.json({
       revalidated: true,
       timestamp: Date.now(),
-      message: "Cache successfully purged across all routes and layout tree.",
+      message: "Cache successfully purged across all routes, tags, and layout tree.",
     });
-  } catch (err: any) {
-    return NextResponse.json({ message: err.message }, { status: 500 });
+  } catch (err: unknown) {
+    return NextResponse.json(
+      { message: err instanceof Error ? err.message : "Revalidation failed" },
+      { status: 500 }
+    );
   }
 }

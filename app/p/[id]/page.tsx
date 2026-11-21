@@ -13,15 +13,15 @@ import {
   ChevronRight,
   HelpCircle,
   Play,
-  ArrowLeft
+  ArrowLeft,
 } from "lucide-react";
+
 export const revalidate = 1800;
 
 type PageProps = {
   params: Promise<{ id: string }>;
 };
 
-// এসইও স্কিমার জন্য টেক্সট থেকে অপ্রয়োজনীয় HTML ও LaTeX চিহ্ন বাদ দেওয়ার হেল্পার
 function sanitizeTextForSchema(text: string): string {
   if (!text) return "";
   return text
@@ -66,6 +66,7 @@ export default async function ExamLandingPage({ params }: PageProps) {
   const { id } = await params;
   const data = await getExamSeoData(id);
   const teaserQuestions = data.questions.slice(0, 3);
+  const remainingCount = Math.max(0, data.totalQuestions - 2);
 
   const jsonLd = {
     "@context": "https://schema.org",
@@ -214,7 +215,7 @@ export default async function ExamLandingPage({ params }: PageProps) {
         </div>
 
         <div className="mb-10">
-          <AppRedirectButton examId={data.command} examTitle={data.title} />
+          <AppRedirectButton examId={data.command} examTitle={data.title} slug={data.slug} />
         </div>
 
         {data.syllabusNote && (
@@ -243,10 +244,13 @@ export default async function ExamLandingPage({ params }: PageProps) {
                   {idx === 2 && (
                     <div className="absolute inset-0 bg-gradient-to-t from-[#121218] via-[#121218]/90 to-transparent z-10 flex flex-col items-center justify-end pb-6">
                       <p className="text-cyan-400 font-bold text-xs mb-2">
-                        বাকি {data.totalQuestions - 2}টি প্রশ্ন ও ব্যাখ্যা দেখতে পরীক্ষা শুরু করুন
+                        {remainingCount > 0
+                          ? `বাকি ${remainingCount}টি প্রশ্ন ও ব্যাখ্যা দেখতে পরীক্ষা শুরু করুন`
+                          : "সকল প্রশ্ন ও ব্যাখ্যা দেখতে পরীক্ষা শুরু করুন"}
                       </p>
                       <Link
                         href={`/exam/${encodeURIComponent(data.slug || data.command)}?title=${encodeURIComponent(data.title)}`}
+                        data-card-surface="custom"
                         className="bg-cyan-500 hover:bg-cyan-400 text-black font-extrabold px-5 py-2 rounded-xl text-xs flex items-center gap-1.5 shadow-lg shadow-cyan-500/20"
                       >
                         <Play size={14} className="fill-black" /> পরীক্ষা দিন

@@ -74,7 +74,10 @@ export default function SignUpPage() {
         </button>
 
         <div className="text-center mb-6">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center font-black text-xl text-white mx-auto shadow-lg shadow-cyan-500/30 mb-3">
+          <div
+            data-card-surface="custom"
+            className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center font-black text-xl text-white mx-auto shadow-lg shadow-cyan-500/30 mb-3"
+          >
             H
           </div>
           <h1 className="text-2xl font-black tracking-wide">অ্যাকাউন্ট খুলুন</h1>

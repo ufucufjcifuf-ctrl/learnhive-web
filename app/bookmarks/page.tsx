@@ -99,8 +99,18 @@ export default function BookmarksPage() {
 
   const startBookmarkPractice = () => {
     if (savedQuestions.length === 0) return;
+
+    const gradableQuestions = savedQuestions.filter(
+      (q) => (q.correctOptionIndices && q.correctOptionIndices.length > 0) || q.correctOptionIndex !== -1
+    );
+
+    if (gradableQuestions.length === 0) {
+      alert("⚠️ পুরোনো বুকমার্ক প্রশ্নগুলোতে উত্তর সংরক্ষিত নেই। নতুন করে বুকমার্ক করলে সরাসরি প্র্যাকটিস করতে পারবেন।");
+      return;
+    }
+
     if (typeof window !== "undefined") {
-      sessionStorage.setItem("mcqhub_revision_questions", JSON.stringify(savedQuestions));
+      sessionStorage.setItem("mcqhub_revision_questions", JSON.stringify(gradableQuestions));
     }
     router.push(`/exam/MISTAKE_REVISION?title=Bookmarked+Questions+Practice`);
   };
@@ -157,6 +167,7 @@ export default function BookmarksPage() {
               <button
                 type="button"
                 onClick={startBookmarkPractice}
+                data-card-surface="custom"
                 className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold px-5 py-2.5 rounded-xl text-xs transition shadow-lg shadow-emerald-500/20"
               >
                 <Play size={16} className="fill-black" /> পরীক্ষা দিন

@@ -50,7 +50,7 @@ export const ExamActionModal: React.FC<ExamActionModalProps> = ({ item, onClose 
     const rawCmd = item.command || item.id;
     const history = getExamHistory();
     const hasTaken = history.some(
-      (h) => h.examId === rawCmd || h.examTitle.includes(item.title)
+      (h) => h.examId === rawCmd || h.examTitle === item.title
     );
     return { isLive, isArchive, isClosed, hasTaken };
   }, [item]);
@@ -175,6 +175,7 @@ export const ExamActionModal: React.FC<ExamActionModalProps> = ({ item, onClose 
             <button
               type="button"
               onClick={handleStartExamClick}
+              data-card-surface="custom"
               className={`w-full py-3.5 px-4 rounded-2xl font-extrabold text-xs transition flex items-center justify-center gap-2 shadow-lg ${
                 isLive
                   ? "bg-red-500 hover:bg-red-400 text-white shadow-red-500/20"
@@ -221,7 +222,7 @@ export const ExamActionModal: React.FC<ExamActionModalProps> = ({ item, onClose 
               </button>
             )}
 
-            {config?.attachedNoteLink && (
+            {config?.attachedNoteLink && config?.attachedNoteType !== "NOTE_SHEET" && (
               <button
                 type="button"
                 onClick={() => {
@@ -230,12 +231,12 @@ export const ExamActionModal: React.FC<ExamActionModalProps> = ({ item, onClose 
                   router.push(
                     `/note/${encodeURIComponent(noteSlug)}?title=${encodeURIComponent(
                       item.title
-                    )}&type=${config.attachedNoteType || "NOTE_PDF"}`
+                    )}&link=${encodeURIComponent(config.attachedNoteLink!)}`
                   );
                 }}
                 className="w-full py-3.5 px-4 rounded-2xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 text-emerald-300 font-extrabold text-xs transition flex items-center justify-center gap-2"
               >
-                <BookOpen size={16} /> এই অধ্যায়ের নোট পড়ুন (READ NOTE)
+                <BookOpen size={16} /> এই অধ্যায়ের PDF নোট পড়ুন (READ NOTE)
               </button>
             )}
 

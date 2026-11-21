@@ -5,9 +5,11 @@ import { useRouter } from "next/navigation";
 import { getAllSearchableItems } from "@/lib/layoutService";
 import { searchItemsWithRanking } from "@/lib/searchService";
 import { createFolderSlug, createExamSlug, createNoteSlug } from "@/lib/slugUtils";
+import { getServerNow } from "@/lib/apiClient";
 import { useAuth } from "@/lib/useAuth";
 import { DashboardItem } from "@/types";
 import { MathText } from "@/components/MathText";
+import { ExamActionModal } from "@/components/ExamActionModal";
 import { ArrowLeft, Search, Play, Folder, FileText, X, Share2 } from "lucide-react";
 
 export default function SearchPage() {
@@ -17,10 +19,11 @@ export default function SearchPage() {
   const [allItems, setAllItems] = useState<DashboardItem[]>([]);
   const [activeFilter, setActiveFilter] = useState<"ALL" | "EXAM" | "FOLDER" | "NOTE">("ALL");
   const [history, setHistory] = useState<string[]>([]);
+  const [selectedExamItem, setSelectedExamItem] = useState<DashboardItem | null>(null);
 
   useEffect(() => {
     getAllSearchableItems().then((items) => {
-      setAllItems(items.filter((it) => !it.isHidden));
+      setAllItems(items.filter((it) => !it.isHidden && it.type !== "NOTE_SHEET"));
     });
 
     if (typeof window !== "undefined") {
@@ -51,24 +54,51 @@ export default function SearchPage() {
         router.push("/premium");
         return;
       }
-      const cleanSlug = createExamSlug(item.title, rawCmd, item.slug);
-      router.push(`/exam/${encodeURIComponent(cleanSlug)}?title=${encodeURIComponent(item.title)}`);
-    } else if (item.type === "FOLDER" || item.type.includes("SECTION")) {
+      const now = getServerNow();
+      if (item.examConfig?.startTimeMs && now < item.examConfig.startTimeMs) {
+        const dt = new Date(item.examConfig.startTimeMs).toLocaleString("bn-BD", {
+          month: "short",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+        alert(`⏳ এই পরীক্ষাটি এখনো শুরু হয়নি!\nশুরুর সময়: ${dt}`);
+        return;
+      }
+      setSelectedExamItem(item);
+    } else if (
+      item.type === "FOLDER" ||
+      item.type.includes("SECTION") ||
+      item.type === "CAROUSEL" ||
+      item.type === "HORIZONTAL_SCROLL"
+    ) {
       const cleanSlug = createFolderSlug(item.title, rawCmd, item.slug);
       router.push(`/f/${encodeURIComponent(cleanSlug)}`);
-    } else if (item.type.startsWith("NOTE")) {
+    } else if (item.type === "NOTE_PDF") {
       if (isLocked) {
-        alert("👑 এটি একটি প্রিমিয়াম নোট। আনলক করতে PRO মেম্বারশিপ নিন!");
+        alert("👑 এটি একটি প্রিমিয়াম PDF নোট। আনলক করতে PRO মেম্বারশিপ নিন!");
         router.push("/premium");
         return;
       }
       const noteSlug = createNoteSlug(item.title, rawCmd, null);
       router.push(
-        `/note/${encodeURIComponent(noteSlug)}?title=${encodeURIComponent(item.title)}&type=${item.type}`
+        `/note/${encodeURIComponent(noteSlug)}?title=${encodeURIComponent(
+          item.title
+        )}&link=${encodeURIComponent(rawCmd)}`
       );
     } else if (item.type === "HTML_PAGE") {
+      if (isLocked) {
+        alert("👑 এটি প্রিমিয়াম কনটেন্ট। আনলক করতে PRO মেম্বারশিপ নিন!");
+        router.push("/premium");
+        return;
+      }
       router.push(`/page/${encodeURIComponent(item.id)}?title=${encodeURIComponent(item.title)}`);
     } else if (item.type === "VIDEO_YOUTUBE") {
+      if (isLocked) {
+        alert("👑 এটি একটি প্রিমিয়াম ভিডিও ক্লাস। আনলক করতে PRO মেম্বারশিপ নিন!");
+        router.push("/premium");
+        return;
+      }
       router.push(`/video/${encodeURIComponent(rawCmd)}?title=${encodeURIComponent(item.title)}`);
     }
   };
@@ -114,7 +144,7 @@ export default function SearchPage() {
   const filtered = rankedResults.filter((it) => {
     if (activeFilter === "EXAM") return it.type === "EXAM_FIREBASE";
     if (activeFilter === "FOLDER") return it.type === "FOLDER" || it.type.includes("SECTION");
-    if (activeFilter === "NOTE") return it.type.startsWith("NOTE");
+    if (activeFilter === "NOTE") return it.type === "NOTE_PDF";
     return true;
   });
 
@@ -177,7 +207,7 @@ export default function SearchPage() {
               activeFilter === "NOTE" ? "bg-cyan-500 text-black border-cyan-500" : "bg-white/5 border-white/5 text-gray-400"
             }`}
           >
-            নোট
+            PDF নোট
           </button>
         </div>
 
@@ -227,7 +257,7 @@ export default function SearchPage() {
                     <div className="p-2.5 rounded-xl bg-white/5 text-cyan-400 flex-shrink-0">
                       {item.type === "EXAM_FIREBASE" ? (
                         <Play size={16} />
-                      ) : item.type.startsWith("NOTE") ? (
+                      ) : item.type === "NOTE_PDF" ? (
                         <FileText size={16} />
                       ) : (
                         <Folder size={16} />
@@ -258,6 +288,10 @@ export default function SearchPage() {
           </div>
         )}
       </div>
+
+      {selectedExamItem && (
+        <ExamActionModal item={selectedExamItem} onClose={() => setSelectedExamItem(null)} />
+      )}
     </div>
   );
 }

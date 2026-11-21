@@ -6,9 +6,11 @@ import { SmartMatrixCanvas } from "@/components/SmartMatrixCanvas";
 import { Navbar } from "@/components/Navbar";
 import { GlobalBanner } from "@/components/GlobalBanner";
 import { Footer } from "@/components/Footer";
+import { ExamActionModal } from "@/components/ExamActionModal";
 import { searchItemsWithRanking } from "@/lib/searchService";
 import { getAllSearchableItems } from "@/lib/layoutService";
-import { createFolderSlug, createExamSlug, createNoteSlug } from "@/lib/slugUtils";
+import { createFolderSlug, createNoteSlug } from "@/lib/slugUtils";
+import { getServerNow } from "@/lib/apiClient";
 import { useAuth } from "@/lib/useAuth";
 import {
   Home,
@@ -33,6 +35,7 @@ export const HomeClient: React.FC<{ initialItems: DashboardItem[] }> = ({ initia
   const { isPro } = useAuth();
   const [search, setSearch] = useState("");
   const [searchableItems, setSearchableItems] = useState<DashboardItem[]>(initialItems);
+  const [selectedExamItem, setSelectedExamItem] = useState<DashboardItem | null>(null);
 
   useEffect(() => {
     getAllSearchableItems()
@@ -45,7 +48,7 @@ export const HomeClient: React.FC<{ initialItems: DashboardItem[] }> = ({ initia
   }, []);
 
   const visibleSearchPool = searchableItems.filter((it) => {
-    if (it.isHidden) return false;
+    if (it.isHidden || it.type === "NOTE_SHEET") return false;
     if (it.visibilityCondition === "PREMIUM_ONLY" && !isPro) return false;
     if (it.visibilityCondition === "FREE_ONLY" && isPro) return false;
     return true;
@@ -57,25 +60,59 @@ export const HomeClient: React.FC<{ initialItems: DashboardItem[] }> = ({ initia
 
   const handleSearchItemClick = (item: DashboardItem) => {
     const rawCmd = item.command || item.id;
+    const isLocked = Boolean((item.isPremium || item.examConfig?.isPremium) && !isPro);
+
     if (item.type === "EXAM_FIREBASE") {
-      if ((item.isPremium || item.examConfig?.isPremium) && !isPro) {
+      if (isLocked) {
         alert("👑 এটি একটি প্রিমিয়াম পরীক্ষা। আনলক করতে PRO মেম্বারশিপ নিন!");
         router.push("/premium");
         return;
       }
-      const cleanSlug = createExamSlug(item.title, rawCmd, item.slug);
-      router.push(`/exam/${encodeURIComponent(cleanSlug)}?title=${encodeURIComponent(item.title)}`);
-    } else if (item.type === "FOLDER" || item.type.includes("SECTION")) {
+      const now = getServerNow();
+      if (item.examConfig?.startTimeMs && now < item.examConfig.startTimeMs) {
+        const dt = new Date(item.examConfig.startTimeMs).toLocaleString("bn-BD", {
+          month: "short",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+        alert(`⏳ এই পরীক্ষাটি এখনো শুরু হয়নি!\nশুরুর সময়: ${dt}`);
+        return;
+      }
+      setSelectedExamItem(item);
+    } else if (
+      item.type === "FOLDER" ||
+      item.type.includes("SECTION") ||
+      item.type === "CAROUSEL" ||
+      item.type === "HORIZONTAL_SCROLL"
+    ) {
       const cleanSlug = createFolderSlug(item.title, rawCmd, item.slug);
       router.push(`/f/${encodeURIComponent(cleanSlug)}`);
-    } else if (item.type.startsWith("NOTE")) {
+    } else if (item.type === "NOTE_PDF") {
+      if (isLocked) {
+        alert("👑 এটি একটি প্রিমিয়াম PDF নোট। আনলক করতে PRO মেম্বারশিপ নিন!");
+        router.push("/premium");
+        return;
+      }
       const noteSlug = createNoteSlug(item.title, rawCmd, null);
       router.push(
-        `/note/${encodeURIComponent(noteSlug)}?title=${encodeURIComponent(item.title)}&type=${item.type}`
+        `/note/${encodeURIComponent(noteSlug)}?title=${encodeURIComponent(
+          item.title
+        )}&link=${encodeURIComponent(rawCmd)}`
       );
     } else if (item.type === "HTML_PAGE") {
+      if (isLocked) {
+        alert("👑 এটি প্রিমিয়াম কনটেন্ট। আনলক করতে PRO মেম্বারশিপ নিন!");
+        router.push("/premium");
+        return;
+      }
       router.push(`/page/${encodeURIComponent(item.id)}?title=${encodeURIComponent(item.title)}`);
     } else if (item.type === "VIDEO_YOUTUBE") {
+      if (isLocked) {
+        alert("👑 এটি একটি প্রিমিয়াম ভিডিও ক্লাস। আনলক করতে PRO মেম্বারশিপ নিন!");
+        router.push("/premium");
+        return;
+      }
       router.push(`/video/${encodeURIComponent(rawCmd)}?title=${encodeURIComponent(item.title)}`);
     }
   };
@@ -176,7 +213,7 @@ export const HomeClient: React.FC<{ initialItems: DashboardItem[] }> = ({ initia
                       <div className="p-2.5 rounded-xl bg-white/5 text-cyan-400">
                         {item.type === "EXAM_FIREBASE" ? (
                           <Play size={16} />
-                        ) : item.type.startsWith("NOTE") ? (
+                        ) : item.type === "NOTE_PDF" ? (
                           <FileText size={16} />
                         ) : (
                           <Folder size={16} />
@@ -212,6 +249,7 @@ export const HomeClient: React.FC<{ initialItems: DashboardItem[] }> = ({ initia
             </p>
             <Link
               href="/battle"
+              data-card-surface="custom"
               className="block w-full py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-center font-extrabold text-xs transition shadow-lg shadow-purple-500/20"
             >
               ব্যাটল এরিনায় যান ⚔️
@@ -234,6 +272,10 @@ export const HomeClient: React.FC<{ initialItems: DashboardItem[] }> = ({ initia
           </div>
         </aside>
       </div>
+
+      {selectedExamItem && (
+        <ExamActionModal item={selectedExamItem} onClose={() => setSelectedExamItem(null)} />
+      )}
     </div>
   );
 };

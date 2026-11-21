@@ -14,6 +14,11 @@ export type { UserProfile };
 
 const PROFILE_CACHE_KEY = "mcqhub_user_profile";
 const inflightSync = new Map<string, Promise<UserProfile | null>>();
+let pendingManualAuthPromise: Promise<unknown> | null = null;
+
+export function getPendingManualAuth(): Promise<unknown> | null {
+  return pendingManualAuthPromise;
+}
 
 export function clearCachedUserProfile(): void {
   if (typeof window !== "undefined") {
@@ -67,6 +72,10 @@ export async function syncUserWithBackend(extra?: {
 }
 
 export async function fetchUserProfile(uid: string): Promise<UserProfile | null> {
+  if (pendingManualAuthPromise) {
+    await pendingManualAuthPromise.catch(() => {});
+  }
+
   const fbUser = auth.currentUser;
   if (!fbUser || fbUser.uid !== uid) return null;
 
@@ -84,22 +93,30 @@ export async function fetchUserProfile(uid: string): Promise<UserProfile | null>
 }
 
 export async function signInWithGoogle(): Promise<{ user: UserProfile | null; error: string | null }> {
-  try {
-    const result = await signInWithPopup(auth, googleProvider);
-    const synced = await syncUserWithBackend({
-      name: result.user.displayName || "Student",
-      photoUrl: result.user.photoURL,
-    });
-    return synced;
-  } catch (error: unknown) {
-    const err = error as { code?: string; message?: string };
-    if (err.code === "auth/unauthorized-domain") {
-      return {
-        user: null,
-        error: "Firebase Console-এ ডোমেইনটি Authorized Domain হিসেবে যোগ করতে হবে।",
-      };
+  const run = async () => {
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      return await syncUserWithBackend({
+        name: result.user.displayName || "Student",
+        photoUrl: result.user.photoURL,
+      });
+    } catch (error: unknown) {
+      const err = error as { code?: string; message?: string };
+      if (err.code === "auth/unauthorized-domain") {
+        return {
+          user: null,
+          error: "Firebase Console-এ ডোমেইনটি Authorized Domain হিসেবে যোগ করতে হবে।",
+        };
+      }
+      return { user: null, error: err.message || "Google লগইন ব্যর্থ হয়েছে।" };
     }
-    return { user: null, error: err.message || "Google লগইন ব্যর্থ হয়েছে।" };
+  };
+
+  pendingManualAuthPromise = run();
+  try {
+    return await (pendingManualAuthPromise as Promise<{ user: UserProfile | null; error: string | null }>);
+  } finally {
+    pendingManualAuthPromise = null;
   }
 }
 
@@ -109,21 +126,29 @@ export async function signUpWithEmail(
   pass: string,
   username?: string
 ): Promise<{ user: UserProfile | null; error: string | null }> {
-  try {
-    const res = await createUserWithEmailAndPassword(auth, email.trim(), pass);
-    await updateProfile(res.user, { displayName: name.trim() });
+  const run = async () => {
+    try {
+      const res = await createUserWithEmailAndPassword(auth, email.trim(), pass);
+      await updateProfile(res.user, { displayName: name.trim() });
 
-    const synced = await syncUserWithBackend({
-      name: name.trim(),
-      username: (username || email.split("@")[0]).trim().toLowerCase(),
-    });
-    return synced;
-  } catch (err: unknown) {
-    const e = err as { code?: string };
-    let msg = "সাইন-আপ ব্যর্থ হয়েছে।";
-    if (e.code === "auth/email-already-in-use") msg = "এই ইমেইল দিয়ে ইতিমধ্যে অ্যাকাউন্ট খোলা আছে।";
-    else if (e.code === "auth/weak-password") msg = "পাসওয়ার্ড অন্তত ৬ অক্ষরের হতে হবে।";
-    return { user: null, error: msg };
+      return await syncUserWithBackend({
+        name: name.trim(),
+        username: (username || email.split("@")[0]).trim().toLowerCase(),
+      });
+    } catch (err: unknown) {
+      const e = err as { code?: string };
+      let msg = "সাইন-আপ ব্যর্থ হয়েছে।";
+      if (e.code === "auth/email-already-in-use") msg = "এই ইমেইল দিয়ে ইতিমধ্যে অ্যাকাউন্ট খোলা আছে।";
+      else if (e.code === "auth/weak-password") msg = "পাসওয়ার্ড অন্তত ৬ অক্ষরের হতে হবে।";
+      return { user: null, error: msg };
+    }
+  };
+
+  pendingManualAuthPromise = run();
+  try {
+    return await (pendingManualAuthPromise as Promise<{ user: UserProfile | null; error: string | null }>);
+  } finally {
+    pendingManualAuthPromise = null;
   }
 }
 
@@ -131,25 +156,33 @@ export async function signInWithEmail(
   identifier: string,
   pass: string
 ): Promise<{ user: UserProfile | null; error: string | null }> {
+  const run = async () => {
+    try {
+      let loginEmail = identifier.trim().toLowerCase();
+
+      if (!loginEmail.includes("@")) {
+        const resolved = await apiFetch<{ success: boolean; email: string }>("/api/user/resolve-login", {
+          method: "POST",
+          body: { identifier: loginEmail },
+        });
+        loginEmail = resolved.email;
+      }
+
+      await signInWithEmailAndPassword(auth, loginEmail, pass);
+      return await syncUserWithBackend();
+    } catch (err: unknown) {
+      if (err instanceof ApiError) {
+        return { user: null, error: err.message };
+      }
+      return { user: null, error: "ভুল ইউজারনেম/ইমেইল অথবা পাসওয়ার্ড প্রদান করেছেন!" };
+    }
+  };
+
+  pendingManualAuthPromise = run();
   try {
-    let loginEmail = identifier.trim().toLowerCase();
-
-    if (!loginEmail.includes("@")) {
-      const resolved = await apiFetch<{ success: boolean; email: string }>("/api/user/resolve-login", {
-        method: "POST",
-        body: { identifier: loginEmail },
-      });
-      loginEmail = resolved.email;
-    }
-
-    await signInWithEmailAndPassword(auth, loginEmail, pass);
-    const synced = await syncUserWithBackend();
-    return synced;
-  } catch (err: unknown) {
-    if (err instanceof ApiError) {
-      return { user: null, error: err.message };
-    }
-    return { user: null, error: "ভুল ইউজারনেম/ইমেইল অথবা পাসওয়ার্ড প্রদান করেছেন!" };
+    return await (pendingManualAuthPromise as Promise<{ user: UserProfile | null; error: string | null }>);
+  } finally {
+    pendingManualAuthPromise = null;
   }
 }
 

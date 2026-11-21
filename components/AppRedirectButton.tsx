@@ -1,15 +1,16 @@
 "use client";
 
 import React, { useState } from "react";
-import { Smartphone, Play, ArrowRight, Check } from "lucide-react";
+import { Smartphone, Play, ArrowRight } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 interface Props {
   examId: string;
   examTitle: string;
+  slug?: string;
 }
 
-export const AppRedirectButton: React.FC<Props> = ({ examId, examTitle }) => {
+export const AppRedirectButton: React.FC<Props> = ({ examId, examTitle, slug }) => {
   const router = useRouter();
   const [openingApp, setOpeningApp] = useState(false);
 
@@ -17,11 +18,12 @@ export const AppRedirectButton: React.FC<Props> = ({ examId, examTitle }) => {
     setOpeningApp(true);
     const playStoreUrl = "https://play.google.com/store/apps/details?id=com.robinsheikh.mcqhub";
     const fallbackEncoded = encodeURIComponent(playStoreUrl);
-    
-    // Android Chrome Intent Format (ম্যাচিং Android MainActivity deep-link filter)
-    const intentUrl = `intent://exam/${encodeURIComponent(examId)}#Intent;scheme=https;package=com.robinsheikh.mcqhub;S.browser_fallback_url=${fallbackEncoded};end`;
+    const targetIdentifier = slug || examId;
 
-    // অ্যাপ ওপেন করার চেষ্টা
+    const intentUrl = `intent://learnhive-web.vercel.app/p/${encodeURIComponent(
+      targetIdentifier
+    )}#Intent;scheme=https;package=com.robinsheikh.mcqhub;S.browser_fallback_url=${fallbackEncoded};end`;
+
     window.location.href = intentUrl;
 
     setTimeout(() => {
@@ -30,23 +32,22 @@ export const AppRedirectButton: React.FC<Props> = ({ examId, examTitle }) => {
   };
 
   const handleWebExam = () => {
-    router.push(`/exam/${encodeURIComponent(examId)}?title=${encodeURIComponent(examTitle)}`);
+    router.push(`/exam/${encodeURIComponent(slug || examId)}?title=${encodeURIComponent(examTitle)}`);
   };
 
   return (
     <div className="flex flex-col gap-3 mt-4 w-full max-w-md mx-auto">
-      {/* অ্যান্ড্রয়েড অ্যাপে ওপেন করার বাটন */}
       <button
         type="button"
         onClick={handleOpenApp}
         disabled={openingApp}
+        data-card-surface="custom"
         className="w-full bg-gradient-to-r from-cyan-400 to-blue-500 hover:from-cyan-300 hover:to-blue-400 text-black font-black py-4 px-6 rounded-2xl flex items-center justify-center gap-2.5 text-sm shadow-xl shadow-cyan-500/20 transition-all transform hover:scale-[1.02] active:scale-[0.98]"
       >
         <Smartphone size={18} className="fill-black" />
         <span>{openingApp ? "অ্যাপ চালু হচ্ছে..." : "OPEN IN ANDROID APP (BEST)"}</span>
       </button>
 
-      {/* ওয়েব ব্রাউজারে পরীক্ষা দেওয়ার বাটন */}
       <button
         type="button"
         onClick={handleWebExam}
