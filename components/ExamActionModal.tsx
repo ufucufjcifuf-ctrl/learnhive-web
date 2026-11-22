@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { QuestionCountModal } from "@/components/QuestionCountModal";
-import { createExamSlug, createNoteSlug } from "@/lib/slugUtils";
+import { createExamSlug } from "@/lib/slugUtils";
 import { getServerNow } from "@/lib/apiClient";
 import { getExamHistory } from "@/lib/historyService";
 
@@ -227,12 +227,7 @@ export const ExamActionModal: React.FC<ExamActionModalProps> = ({ item, onClose 
                 type="button"
                 onClick={() => {
                   onClose();
-                  const noteSlug = createNoteSlug(item.title, config.attachedNoteLink!);
-                  router.push(
-                    `/note/${encodeURIComponent(noteSlug)}?title=${encodeURIComponent(
-                      item.title
-                    )}&link=${encodeURIComponent(config.attachedNoteLink!)}`
-                  );
+                  router.push(`/note/${encodeURIComponent(cleanExamSlug)}?mode=attached`);
                 }}
                 className="w-full py-3.5 px-4 rounded-2xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 text-emerald-300 font-extrabold text-xs transition flex items-center justify-center gap-2"
               >

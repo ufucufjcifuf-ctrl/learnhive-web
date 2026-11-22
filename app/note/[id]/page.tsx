@@ -1,228 +1,189 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { useParams, useSearchParams, useRouter } from "next/navigation";
-import { NoteAnnotationDrawer } from "@/components/NoteAnnotationDrawer";
-import { findItemDeeply } from "@/lib/layoutService";
-import { API_BASE_URL, getAuthToken } from "@/lib/apiClient";
-import { useAuth } from "@/lib/useAuth";
-import {
-  ArrowLeft,
-  BookOpen,
-  Bookmark,
-  Lock,
-  ExternalLink,
-  Download,
-} from "lucide-react";
+import React, { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { useParams, useSearchParams, useRouter } from "next/navigation";
+import { PdfReader } from "@/components/PdfReader";
+import { findItemDeeply } from "@/lib/layoutService";
+import { API_BASE_URL, apiFetch, getAuthToken } from "@/lib/apiClient";
+import { auth } from "@/lib/firebase";
+import { useAuth } from "@/lib/useAuth";
+import { DashboardItem } from "@/types";
+import { ArrowLeft, Lock } from "lucide-react";
+
+function resolveServerMediaUrl(rawPath: string): string {
+  const trimmed = rawPath.trim();
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) return trimmed;
+  if (trimmed.startsWith("/media/")) return `${API_BASE_URL}${trimmed}`;
+  if (trimmed.startsWith("media/")) return `${API_BASE_URL}/${trimmed}`;
+  if (trimmed.startsWith("pdfs/")) return `${API_BASE_URL}/media/${trimmed}`;
+  return `${API_BASE_URL}/media/${trimmed.replace(/^\/+/, "")}`;
+}
 
 export default function NoteViewerPage() {
   const params = useParams();
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { loading: authLoading } = useAuth();
+  const { user, profile, isPro, loading: authLoading } = useAuth();
 
   const id = params?.id ? decodeURIComponent(String(params.id)) : "";
-  const initialTitle = searchParams.get("title") || "PDF Note Viewer";
-  const queryLink = searchParams.get("link") || "";
+  const isAttachedExamNote = searchParams.get("mode") === "attached";
 
-  const [title, setTitle] = useState(initialTitle);
-  const [noteKey, setNoteKey] = useState<string>(queryLink || id);
-  const [pdfRenderUrl, setPdfRenderUrl] = useState<string>("");
+  const [title, setTitle] = useState("PDF Note");
+  const [canonicalNoteId, setCanonicalNoteId] = useState("");
+  const [pdfUrl, setPdfUrl] = useState("");
+  const [isPremiumNote, setIsPremiumNote] = useState(false);
+  const [authToken, setAuthToken] = useState<string | null>(null);
+
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isPremiumBlocked, setIsPremiumBlocked] = useState(false);
-  const [showNoteDrawer, setShowNoteDrawer] = useState(false);
+
+  const refreshToken = useCallback(async () => {
+    try {
+      const fresh = (await auth.currentUser?.getIdToken(true)) || null;
+      setAuthToken(fresh);
+      return fresh;
+    } catch {
+      return null;
+    }
+  }, []);
 
   useEffect(() => {
-    if (authLoading || (!id && !queryLink)) return;
-
-    let activeBlobUrl: string | null = null;
+    if (authLoading || !id) return;
     let cancelled = false;
 
-    async function loadPdfNote() {
+    async function resolveNoteAccess() {
       setLoading(true);
       setErrorMsg(null);
       setIsPremiumBlocked(false);
 
       try {
-        let targetCommand = queryLink.trim() || id;
-
-        if (
-          !targetCommand.startsWith("http://") &&
-          !targetCommand.startsWith("https://") &&
-          !targetCommand.startsWith("/media/") &&
-          !targetCommand.startsWith("pdfs/")
-        ) {
-          const matchedItem = await findItemDeeply(id).catch(() => null);
-          if (matchedItem) {
-            targetCommand = matchedItem.command || matchedItem.id;
-            setTitle(matchedItem.title || initialTitle);
-          }
+        let matchedItem: DashboardItem | null = await findItemDeeply(id).catch(() => null);
+        if (!matchedItem) {
+          const res = await apiFetch<{ success: boolean; item?: DashboardItem }>(
+            `/api/resolve/${encodeURIComponent(id)}`
+          ).catch(() => null);
+          matchedItem = res?.item || null;
         }
 
-        if (!targetCommand) {
-          if (!cancelled) setErrorMsg("PDF নোটের লিংক খুঁজে পাওয়া যায়নি।");
+        if (!matchedItem) {
+          if (!cancelled) setErrorMsg("এই PDF নোটটি খুঁজে পাওয়া যায়নি বা সরিয়ে ফেলা হয়েছে।");
           return;
         }
 
-        setNoteKey(targetCommand);
-        const token = await getAuthToken();
+        const itemPremium = Boolean(matchedItem.isPremium || matchedItem.examConfig?.isPremium);
+        const resolvedTitle = matchedItem.title || "PDF Note";
 
-        const serverPdfUrl =
-          targetCommand.startsWith("http://") || targetCommand.startsWith("https://")
-            ? targetCommand
-            : targetCommand.startsWith("/media/")
-            ? `${API_BASE_URL}${targetCommand}`
-            : `${API_BASE_URL}/media/${targetCommand.replace(/^\/+/, "")}`;
+        let rawTarget = "";
+        let resolvedNoteKey = matchedItem.id;
 
-        if (serverPdfUrl.startsWith(API_BASE_URL)) {
-          const res = await fetch(serverPdfUrl, {
-            headers: token ? { Authorization: `Bearer ${token}` } : {},
-          });
-
-          if (res.status === 401 || res.status === 403) {
-            if (!cancelled) {
-              setIsPremiumBlocked(true);
-              setErrorMsg(
-                "👑 এটি একটি প্রিমিয়াম PDF নোট! এটি পড়তে অনুগ্রহ করে লগইন করুন অথবা PRO মেম্বারশিপ নিন।"
-              );
-            }
-            return;
-          }
-
-          if (!res.ok) {
-            if (!cancelled) {
-              setErrorMsg("সার্ভার থেকে PDF নোটটি লোড করা যায়নি।");
-            }
-            return;
-          }
-
-          const rawBlob = await res.blob();
-          const pdfBlob = new Blob([rawBlob], { type: "application/pdf" });
-          activeBlobUrl = URL.createObjectURL(pdfBlob);
-          if (!cancelled) {
-            setPdfRenderUrl(activeBlobUrl);
-          }
+        if (isAttachedExamNote || matchedItem.type === "EXAM_FIREBASE") {
+          rawTarget = matchedItem.examConfig?.attachedNoteLink || "";
+          resolvedNoteKey = `${matchedItem.id}_note`;
         } else {
+          rawTarget = matchedItem.command || "";
+          resolvedNoteKey = matchedItem.id;
+        }
+
+        if (!rawTarget) {
+          if (!cancelled) setErrorMsg("PDF নোটের লিংক সংযুক্ত করা নেই।");
+          return;
+        }
+
+        if (itemPremium && !isPro) {
           if (!cancelled) {
-            setPdfRenderUrl(serverPdfUrl);
+            setTitle(resolvedTitle);
+            setIsPremiumBlocked(true);
+            setErrorMsg("👑 এটি একটি প্রিমিয়াম PDF নোট! এটি পড়তে PRO মেম্বারশিপ প্রয়োজন।");
           }
+          return;
+        }
+
+        const resolvedUrl = resolveServerMediaUrl(rawTarget);
+        const token = resolvedUrl.startsWith(API_BASE_URL) ? await getAuthToken() : null;
+
+        if (!cancelled) {
+          setTitle(resolvedTitle);
+          setCanonicalNoteId(resolvedNoteKey);
+          setPdfUrl(resolvedUrl);
+          setIsPremiumNote(itemPremium);
+          setAuthToken(token);
         }
       } catch (e) {
-        console.error("Failed to load PDF note:", e);
+        console.error("Failed to resolve PDF note:", e);
         if (!cancelled) {
           setErrorMsg("নোট লোড করতে সমস্যা হয়েছে। ইন্টারনেট সংযোগ পরীক্ষা করুন।");
         }
       } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
+        if (!cancelled) setLoading(false);
       }
     }
 
-    loadPdfNote();
-
+    resolveNoteAccess();
     return () => {
       cancelled = true;
-      if (activeBlobUrl) {
-        URL.revokeObjectURL(activeBlobUrl);
-      }
     };
-  }, [id, queryLink, initialTitle, authLoading]);
+  }, [id, isAttachedExamNote, isPro, authLoading]);
 
-  return (
-    <div className="min-h-screen bg-[#0A0A0E] text-white flex flex-col items-center selection:bg-cyan-500 selection:text-black">
-      <header className="w-full max-w-4xl flex justify-between items-center px-4 md:px-8 py-3.5 border-b border-white/10 bg-[#121218]/90 backdrop-blur sticky top-0 z-40">
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => router.back()}
-            className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300"
-          >
-            <ArrowLeft size={18} />
-          </button>
-          <div>
-            <h1 className="font-bold text-sm md:text-base text-white line-clamp-1">{title}</h1>
-            <p className="text-[11px] text-cyan-400 font-semibold flex items-center gap-1">
-              <BookOpen size={12} /> PDF ডকুমেন্ট
-            </p>
-          </div>
-        </div>
+  const watermarkText = profile
+    ? `${profile.name} • ${profile.username ? `@${profile.username}` : profile.uid.slice(0, 6)}`
+    : user
+    ? `${user.displayName || "Student"} • ${user.uid.slice(0, 6)}`
+    : "Learn Hive • Reader";
 
-        <button
-          type="button"
-          onClick={() => setShowNoteDrawer(true)}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-400 font-bold text-xs transition"
-        >
-          <Bookmark size={14} />
-          <span>নোট নিন</span>
-        </button>
-      </header>
+  if (loading || authLoading) {
+    return (
+      <div className="min-h-screen bg-[#0A0A0E] text-white flex flex-col items-center justify-center gap-3">
+        <div className="w-10 h-10 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin" />
+        <p className="text-xs font-bold text-gray-400 animate-pulse">নোট যাচাই ও প্রস্তুত হচ্ছে...</p>
+      </div>
+    );
+  }
 
-      <main className="w-full max-w-4xl flex-1 flex flex-col p-4 md:p-6 pb-20">
-        {loading ? (
-          <div className="flex-1 flex flex-col items-center justify-center gap-3 py-24">
-            <div className="w-10 h-10 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin"></div>
-            <p className="text-xs font-bold text-gray-400 animate-pulse">PDF নোট প্রস্তুত হচ্ছে...</p>
-          </div>
-        ) : errorMsg ? (
-          <div className="bg-[#121218] border border-white/10 rounded-3xl p-10 text-center my-10 shadow-xl">
-            {isPremiumBlocked && (
-              <div className="w-14 h-14 bg-amber-500/10 border border-amber-500/30 rounded-2xl flex items-center justify-center mx-auto text-amber-400 mb-4">
-                <Lock size={28} />
-              </div>
-            )}
-            <p className="text-sm font-bold text-gray-200 mb-4">{errorMsg}</p>
+  if (errorMsg || !pdfUrl) {
+    return (
+      <div className="min-h-screen bg-[#0A0A0E] text-white flex flex-col items-center justify-center p-4">
+        <div className="w-full max-w-md bg-[#121218] border border-white/10 rounded-3xl p-8 text-center shadow-2xl">
+          {isPremiumBlocked && (
+            <div className="w-14 h-14 bg-amber-500/10 border border-amber-500/30 rounded-2xl flex items-center justify-center mx-auto text-amber-400 mb-4">
+              <Lock size={28} />
+            </div>
+          )}
+          <p className="text-sm font-bold text-gray-200 mb-5">{errorMsg || "PDF পাওয়া যায়নি।"}</p>
+          <div className="flex flex-col gap-2.5">
             {isPremiumBlocked && (
               <Link
-                href="/premium"
+                href={user ? "/premium" : "/login"}
                 data-card-surface="custom"
-                className="inline-block bg-amber-400 hover:bg-amber-300 text-black font-black px-6 py-3 rounded-2xl text-xs transition"
+                className="bg-amber-400 hover:bg-amber-300 text-black font-black px-6 py-3 rounded-2xl text-xs transition"
               >
-                PRO মেম্বারশিপ নিন 👑
+                {user ? "PRO মেম্বারশিপ নিন 👑" : "লগইন / অ্যাকাউন্ট খুলুন"}
               </Link>
             )}
+            <button
+              type="button"
+              onClick={() => router.back()}
+              className="flex items-center justify-center gap-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 font-bold px-5 py-2.5 rounded-2xl text-xs transition"
+            >
+              <ArrowLeft size={14} /> ফিরে যান
+            </button>
           </div>
-        ) : pdfRenderUrl ? (
-          <div className="w-full flex-1 flex flex-col gap-3">
-            <div className="flex flex-wrap items-center justify-between gap-2 bg-[#121218] border border-white/10 rounded-2xl p-3 text-xs">
-              <span className="text-gray-400">
-                মোবাইলে PDF দেখতে অসুবিধা হলে নতুন ট্যাবে খুলুন বা ডাউনলোড করুন:
-              </span>
-              <div className="flex items-center gap-2">
-                <a
-                  href={pdfRenderUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1.5 bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/40 text-cyan-300 font-bold px-3 py-1.5 rounded-xl transition"
-                >
-                  <ExternalLink size={13} /> নতুন ট্যাবে খুলুন
-                </a>
-                <a
-                  href={pdfRenderUrl}
-                  download={`${title.replace(/[^a-zA-Z0-9\u0980-\u09FF_-]/g, "_")}.pdf`}
-                  className="flex items-center gap-1.5 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 text-emerald-300 font-bold px-3 py-1.5 rounded-xl transition"
-                >
-                  <Download size={13} /> ডাউনলোড
-                </a>
-              </div>
-            </div>
+        </div>
+      </div>
+    );
+  }
 
-            <div className="w-full flex-1 min-h-[75vh] rounded-3xl overflow-hidden border border-white/10 shadow-2xl bg-black">
-              <iframe src={pdfRenderUrl} className="w-full h-full min-h-[75vh] border-0" title={title}></iframe>
-            </div>
-          </div>
-        ) : (
-          <div className="text-center py-20 text-gray-500">PDF পাওয়া যায়নি।</div>
-        )}
-      </main>
-
-      <NoteAnnotationDrawer
-        noteId={noteKey || id}
-        isOpen={showNoteDrawer}
-        onClose={() => setShowNoteDrawer(false)}
-      />
-    </div>
+  return (
+    <PdfReader
+      noteId={canonicalNoteId}
+      title={title}
+      pdfUrl={pdfUrl}
+      isPremium={isPremiumNote}
+      watermarkText={watermarkText}
+      authToken={authToken}
+      onRefreshToken={refreshToken}
+      onBack={() => router.back()}
+    />
   );
 }

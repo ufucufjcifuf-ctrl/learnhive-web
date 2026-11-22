@@ -109,3 +109,27 @@ html.light .text-gray-500 {
 .animate-float-up {
   animation: floatUpEmoji 2.1s ease-out forwards;
 }
+
+/* Web PDF Reader Protection & Search Highlight Layer */
+.pdf-protected-root {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.pdf-search-hit {
+  background-color: rgba(0, 240, 255, 0.35);
+  border-bottom: 2px solid #00F0FF;
+  border-radius: 2px;
+}
+
+.pdf-search-hit-active {
+  background-color: rgba(255, 215, 0, 0.55);
+  border-bottom: 2px solid #FFD700;
+}
+
+@media print {
+  .pdf-protected-root {
+    display: none !important;
+  }
+}

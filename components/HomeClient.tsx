@@ -94,12 +94,8 @@ export const HomeClient: React.FC<{ initialItems: DashboardItem[] }> = ({ initia
         router.push("/premium");
         return;
       }
-      const noteSlug = createNoteSlug(item.title, rawCmd, null);
-      router.push(
-        `/note/${encodeURIComponent(noteSlug)}?title=${encodeURIComponent(
-          item.title
-        )}&link=${encodeURIComponent(rawCmd)}`
-      );
+      const noteSlug = createNoteSlug(item.title, rawCmd, item.slug);
+      router.push(`/note/${encodeURIComponent(noteSlug)}`);
     } else if (item.type === "HTML_PAGE") {
       if (isLocked) {
         alert("👑 এটি প্রিমিয়াম কনটেন্ট। আনলক করতে PRO মেম্বারশিপ নিন!");

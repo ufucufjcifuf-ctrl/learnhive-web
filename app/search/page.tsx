@@ -80,12 +80,8 @@ export default function SearchPage() {
         router.push("/premium");
         return;
       }
-      const noteSlug = createNoteSlug(item.title, rawCmd, null);
-      router.push(
-        `/note/${encodeURIComponent(noteSlug)}?title=${encodeURIComponent(
-          item.title
-        )}&link=${encodeURIComponent(rawCmd)}`
-      );
+      const noteSlug = createNoteSlug(item.title, rawCmd, item.slug);
+      router.push(`/note/${encodeURIComponent(noteSlug)}`);
     } else if (item.type === "HTML_PAGE") {
       if (isLocked) {
         alert("👑 এটি প্রিমিয়াম কনটেন্ট। আনলক করতে PRO মেম্বারশিপ নিন!");
@@ -107,10 +103,13 @@ export default function SearchPage() {
     e.stopPropagation();
     const rawCmd = item.command || item.id;
     const isFolder = item.type === "FOLDER" || item.type.includes("SECTION");
+    const isNote = item.type === "NOTE_PDF";
     const slug = isFolder
       ? createFolderSlug(item.title, rawCmd, item.slug)
+      : isNote
+      ? createNoteSlug(item.title, rawCmd, item.slug)
       : createExamSlug(item.title, rawCmd, item.slug);
-    const routePrefix = isFolder ? "/f/" : "/p/";
+    const routePrefix = isFolder ? "/f/" : isNote ? "/note/" : "/p/";
     const url = `${window.location.origin}${routePrefix}${encodeURIComponent(slug)}`;
 
     if (navigator.share) {

@@ -35,6 +35,16 @@ function resolveShapeStyles(shapeType: string | undefined, radius: number): Reac
       return {
         clipPath: "polygon(0 0, 100% 0, 100% calc(100% - 14px), 0 100%)",
       };
+    case "ZIGZAG":
+      return {
+        clipPath:
+          "polygon(0% 0%, 100% 0%, 100% 100%, 95.8% 93%, 91.6% 100%, 87.5% 93%, 83.3% 100%, 79.1% 93%, 75% 100%, 70.8% 93%, 66.6% 100%, 62.5% 93%, 58.3% 100%, 54.1% 93%, 50% 100%, 45.8% 93%, 41.6% 100%, 37.5% 93%, 33.3% 100%, 29.1% 93%, 25% 100%, 20.8% 93%, 16.6% 100%, 12.5% 93%, 8.3% 100%, 4.1% 93%, 0% 100%)",
+      };
+    case "TICKET":
+      return {
+        clipPath:
+          "polygon(0% 0%, 100% 0%, 100% 38%, 95% 50%, 100% 62%, 100% 100%, 0% 100%, 0% 62%, 5% 50%, 0% 38%)",
+      };
     default:
       return { borderRadius: `${safeR}px` };
   }
@@ -92,12 +102,8 @@ export const DynamicCard: React.FC<{ item: DashboardItem }> = ({ item }) => {
       const cleanSlug = createFolderSlug(item.title, rawCmd, item.slug);
       router.prefetch(`/f/${encodeURIComponent(cleanSlug)}`);
     } else if (item.type === "NOTE_PDF") {
-      const noteSlug = createNoteSlug(item.title, rawCmd, null);
-      router.prefetch(
-        `/note/${encodeURIComponent(noteSlug)}?title=${encodeURIComponent(item.title)}&link=${encodeURIComponent(
-          rawCmd
-        )}`
-      );
+      const noteSlug = createNoteSlug(item.title, rawCmd, item.slug);
+      router.prefetch(`/note/${encodeURIComponent(noteSlug)}`);
     } else if (item.type === "HTML_PAGE") {
       router.prefetch(`/page/${encodeURIComponent(item.id)}?title=${encodeURIComponent(item.title)}`);
     }
@@ -197,12 +203,8 @@ export const DynamicCard: React.FC<{ item: DashboardItem }> = ({ item }) => {
         router.push("/premium");
         return;
       }
-      const noteSlug = createNoteSlug(item.title, rawCmd, null);
-      router.push(
-        `/note/${encodeURIComponent(noteSlug)}?title=${encodeURIComponent(
-          item.title
-        )}&link=${encodeURIComponent(rawCmd)}`
-      );
+      const noteSlug = createNoteSlug(item.title, rawCmd, item.slug);
+      router.push(`/note/${encodeURIComponent(noteSlug)}`);
     } else if (item.type === "HTML_PAGE") {
       if (isLockedPremium) {
         alert("👑 এটি প্রিমিয়াম কনটেন্ট। আনলক করতে PRO মেম্বারশিপ নিন!");
@@ -280,7 +282,7 @@ export const DynamicCard: React.FC<{ item: DashboardItem }> = ({ item }) => {
               </button>
             </div>
           )}
-          <div className="flex gap-3 overflow-x-auto no-scrollbar pb-1 flex-1 items-stretch">
+          <div className="flex gap-3 overflow-x-auto no-scrollbar pb-1 flex-1 min-h-0 items-stretch">
             {visibleChildren.map((child) => (
               <div key={child.id} className="w-44 sm:w-52 flex-shrink-0">
                 <DynamicCard item={child} />
@@ -298,7 +300,7 @@ export const DynamicCard: React.FC<{ item: DashboardItem }> = ({ item }) => {
       const safeIndex = carouselIdx % visibleSlides.length;
       return (
         <div className="relative w-full h-full flex flex-col">
-          <div className="relative flex-1 w-full overflow-hidden rounded-2xl">
+          <div className="relative flex-1 min-h-0 w-full overflow-hidden rounded-2xl">
             <DynamicCard item={visibleSlides[safeIndex]} />
             {visibleSlides.length > 1 && (
               <>
@@ -401,10 +403,11 @@ export const DynamicCard: React.FC<{ item: DashboardItem }> = ({ item }) => {
 
   const titleColor =
     textConf?.textColor && !isTransparentColor(textConf.textColor) ? textConf.textColor : "#FFFFFF";
+  const rawAlign = textConf?.textAlign || "CENTER";
   const titleAlign =
-    textConf?.textAlign === "START"
+    rawAlign === "START"
       ? "text-left items-start"
-      : textConf?.textAlign === "END"
+      : rawAlign === "END"
       ? "text-right items-end"
       : "text-center items-center";
   const titleWeight = textConf?.fontWeight === "NORMAL" ? "font-medium" : "font-bold";
@@ -416,7 +419,12 @@ export const DynamicCard: React.FC<{ item: DashboardItem }> = ({ item }) => {
 
   const isImagePure = item.displayMode === "IMAGE_PURE" && Boolean(resolvedImageUrl);
   const isImageCover = item.displayMode === "IMAGE_COVER" && Boolean(resolvedImageUrl);
+  const isStandardWithIcon = !isImagePure && !isImageCover && Boolean(resolvedImageUrl);
   const overlayAlpha = Math.min(0.85, Math.max(0, uiStyle?.overlayOpacity ?? 0.35));
+  const isWideOrSide =
+    ((design?.aspectRatio ?? 1.5) >= 1.8 && (design?.gridW ?? 100) >= 45) ||
+    rawAlign === "START" ||
+    rawAlign === "END";
 
   return (
     <>
@@ -426,55 +434,115 @@ export const DynamicCard: React.FC<{ item: DashboardItem }> = ({ item }) => {
         data-card-surface="custom"
         className="group relative w-full h-full overflow-hidden cursor-pointer shadow-lg hover:shadow-cyan-500/20 hover:scale-[1.02] active:scale-[0.96] transition-all duration-150 select-none"
       >
-        {(isImagePure || isImageCover) && resolvedImageUrl ? (
+        {isImagePure && resolvedImageUrl ? (
+          <img
+            src={resolvedImageUrl}
+            alt={item.title}
+            className="w-full h-full object-fill rounded-[inherit] block pointer-events-none select-none"
+          />
+        ) : isImageCover && resolvedImageUrl ? (
           <>
             <img
               src={resolvedImageUrl}
               alt={item.title}
               className="w-full h-full object-cover rounded-[inherit] block pointer-events-none select-none"
             />
-            {isImageCover && (
-              <div
-                className="absolute inset-0 pointer-events-none"
-                style={{ backgroundColor: `rgba(0, 0, 0, ${overlayAlpha})` }}
-              />
-            )}
+            <div
+              className="absolute inset-0 pointer-events-none"
+              style={{ backgroundColor: `rgba(0, 0, 0, ${overlayAlpha})` }}
+            />
           </>
         ) : null}
 
         {!isImagePure && (!isImageCover || uiStyle?.showTitleOnImage !== false) && (
-          <div
-            style={{
-              padding: `${padTop}px ${padEnd}px ${padBottom}px ${padStart}px`,
-            }}
-            className={`relative z-10 w-full h-full flex flex-col justify-center ${titleAlign}`}
-          >
-            <h3
+          isStandardWithIcon && isWideOrSide ? (
+            <div
               style={{
-                color: titleColor,
-                fontSize: textConf?.fontSize ? `${Math.min(Math.max(textConf.fontSize, 11), 36)}px` : undefined,
+                padding: `${padTop}px ${padEnd}px ${padBottom}px ${padStart}px`,
               }}
-              className={`${titleWeight} text-sm md:text-base leading-snug line-clamp-2 drop-shadow`}
+              className={`relative z-10 w-full h-full flex items-center gap-2.5 ${
+                rawAlign === "END"
+                  ? "justify-end"
+                  : rawAlign === "START"
+                  ? "justify-start"
+                  : "justify-center"
+              }`}
             >
-              <MathText text={item.title} />
-            </h3>
-            {uiStyle?.showSubtitle && item.subtitle && (
-              <p
-                style={{ color: titleColor, opacity: 0.78 }}
-                className="text-[11px] leading-tight mt-0.5 line-clamp-2"
-              >
-                {item.subtitle}
-              </p>
-            )}
-          </div>
-        )}
+              {rawAlign !== "END" && (
+                <div className="w-9 h-9 rounded-xl bg-white/15 border border-white/30 overflow-hidden flex-shrink-0 shadow-sm">
+                  <img
+                    src={resolvedImageUrl!}
+                    alt={item.title}
+                    className="w-full h-full object-cover pointer-events-none select-none"
+                  />
+                </div>
+              )}
 
-        {!isImagePure && !isImageCover && resolvedImageUrl && (
-          <img
-            src={resolvedImageUrl}
-            alt={item.title}
-            className="absolute bottom-2 right-2 w-7 h-7 rounded-lg object-cover border border-white/40 shadow-md z-10 pointer-events-none"
-          />
+              <div className={`min-w-0 flex flex-col ${titleAlign}`}>
+                <h3
+                  style={{
+                    color: titleColor,
+                    fontSize: textConf?.fontSize ? `${Math.min(Math.max(textConf.fontSize, 11), 36)}px` : undefined,
+                  }}
+                  className={`${titleWeight} text-sm md:text-base leading-snug line-clamp-2 drop-shadow`}
+                >
+                  <MathText text={item.title} />
+                </h3>
+                {uiStyle?.showSubtitle && item.subtitle && (
+                  <p
+                    style={{ color: titleColor, opacity: 0.78 }}
+                    className="text-[11px] leading-tight mt-0.5 line-clamp-1"
+                  >
+                    {item.subtitle}
+                  </p>
+                )}
+              </div>
+
+              {rawAlign === "END" && (
+                <div className="w-9 h-9 rounded-xl bg-white/15 border border-white/30 overflow-hidden flex-shrink-0 shadow-sm">
+                  <img
+                    src={resolvedImageUrl!}
+                    alt={item.title}
+                    className="w-full h-full object-cover pointer-events-none select-none"
+                  />
+                </div>
+              )}
+            </div>
+          ) : (
+            <div
+              style={{
+                padding: `${padTop}px ${padEnd}px ${padBottom}px ${padStart}px`,
+              }}
+              className={`relative z-10 w-full h-full flex flex-col justify-center ${titleAlign}`}
+            >
+              {isStandardWithIcon && (
+                <div className="w-8 h-8 rounded-xl bg-white/15 border border-white/30 overflow-hidden flex-shrink-0 mb-1.5 shadow-sm">
+                  <img
+                    src={resolvedImageUrl!}
+                    alt={item.title}
+                    className="w-full h-full object-cover pointer-events-none select-none"
+                  />
+                </div>
+              )}
+              <h3
+                style={{
+                  color: titleColor,
+                  fontSize: textConf?.fontSize ? `${Math.min(Math.max(textConf.fontSize, 11), 36)}px` : undefined,
+                }}
+                className={`${titleWeight} text-sm md:text-base leading-snug line-clamp-2 drop-shadow`}
+              >
+                <MathText text={item.title} />
+              </h3>
+              {uiStyle?.showSubtitle && item.subtitle && (
+                <p
+                  style={{ color: titleColor, opacity: 0.78 }}
+                  className="text-[11px] leading-tight mt-0.5 line-clamp-2"
+                >
+                  {item.subtitle}
+                </p>
+              )}
+            </div>
+          )
         )}
 
         {(design?.showBadge ?? true) && item.badgeText && (
