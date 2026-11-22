@@ -70,6 +70,10 @@ export const DynamicCard: React.FC<{ item: DashboardItem }> = ({ item }) => {
   const bgConfig = design?.background || uiStyle?.background;
   const textConf = uiStyle?.textConfig;
 
+  const isCardClickable =
+    item.uiAction?.type !== "NONE" &&
+    (item.type !== "INFO_CARD" || Boolean(item.uiAction?.actionUri?.trim()));
+
   const isChildVisible = useCallback(
     (ch: DashboardItem) => {
       if (ch.isHidden || ch.type === "NOTE_SHEET") return false;
@@ -95,6 +99,7 @@ export const DynamicCard: React.FC<{ item: DashboardItem }> = ({ item }) => {
   }, [item.iconUrl]);
 
   useEffect(() => {
+    if (!isCardClickable) return;
     const rawCmd = item.command || item.id;
     const isFolder = item.type === "FOLDER" || item.type.includes("SECTION");
 
@@ -107,7 +112,7 @@ export const DynamicCard: React.FC<{ item: DashboardItem }> = ({ item }) => {
     } else if (item.type === "HTML_PAGE") {
       router.prefetch(`/page/${encodeURIComponent(item.id)}?title=${encodeURIComponent(item.title)}`);
     }
-  }, [item, router]);
+  }, [item, isCardClickable, router]);
 
   const embeddedVisibleCount = (item.embeddedItems || []).filter(isChildVisible).length;
   useEffect(() => {
@@ -130,7 +135,9 @@ export const DynamicCard: React.FC<{ item: DashboardItem }> = ({ item }) => {
   const isLockedPremium = Boolean((item.isPremium || item.examConfig?.isPremium) && !isPro);
 
   const handleClick = useCallback(() => {
-    const actionUri = item.uiAction?.actionUri;
+    if (!isCardClickable) return;
+
+    const actionUri = item.uiAction?.actionUri?.trim();
     if (actionUri) {
       if (actionUri.startsWith("http://") || actionUri.startsWith("https://")) {
         window.open(actionUri, "_blank", "noopener,noreferrer");
@@ -169,6 +176,8 @@ export const DynamicCard: React.FC<{ item: DashboardItem }> = ({ item }) => {
         return;
       }
     }
+
+    if (item.type === "INFO_CARD") return;
 
     const rawCmd = item.command || item.id;
 
@@ -220,7 +229,7 @@ export const DynamicCard: React.FC<{ item: DashboardItem }> = ({ item }) => {
       }
       router.push(`/video/${encodeURIComponent(rawCmd)}?title=${encodeURIComponent(item.title)}`);
     }
-  }, [item, isLockedPremium, isUpcoming, router]);
+  }, [item, isCardClickable, isLockedPremium, isUpcoming, router]);
 
   if (item.type === "SPACER") {
     return <div className="w-full h-full pointer-events-none" />;
@@ -241,16 +250,19 @@ export const DynamicCard: React.FC<{ item: DashboardItem }> = ({ item }) => {
     const tAlign =
       textConf?.textAlign === "START" ? "text-left" : textConf?.textAlign === "END" ? "text-right" : "text-center";
     const tWeight = textConf?.fontWeight === "NORMAL" ? "font-normal" : "font-bold";
+    const isTextClickable =
+      item.uiAction?.type !== "NONE" && Boolean(item.uiAction?.actionUri?.trim());
+
     return (
       <div
-        onClick={item.uiAction?.actionUri ? handleClick : undefined}
+        onClick={isTextClickable ? handleClick : undefined}
         className={`w-full h-full flex items-center px-3 ${
           textConf?.textAlign === "START"
             ? "justify-start"
             : textConf?.textAlign === "END"
             ? "justify-end"
             : "justify-center"
-        } ${item.uiAction?.actionUri ? "cursor-pointer" : ""}`}
+        } ${isTextClickable ? "cursor-pointer" : ""}`}
       >
         <div
           style={{
@@ -273,13 +285,15 @@ export const DynamicCard: React.FC<{ item: DashboardItem }> = ({ item }) => {
           {item.title && (
             <div className="flex items-center justify-between px-1 mb-2">
               <h3 className="text-xs sm:text-sm font-extrabold text-white line-clamp-1">{item.title}</h3>
-              <button
-                type="button"
-                onClick={handleClick}
-                className="text-[11px] font-bold text-cyan-400 hover:underline flex-shrink-0"
-              >
-                সব দেখুন →
-              </button>
+              {isCardClickable && (
+                <button
+                  type="button"
+                  onClick={handleClick}
+                  className="text-[11px] font-bold text-cyan-400 hover:underline flex-shrink-0"
+                >
+                  সব দেখুন →
+                </button>
+              )}
             </div>
           )}
           <div className="flex gap-3 overflow-x-auto no-scrollbar pb-1 flex-1 min-h-0 items-stretch">
@@ -429,10 +443,14 @@ export const DynamicCard: React.FC<{ item: DashboardItem }> = ({ item }) => {
   return (
     <>
       <div
-        onClick={handleClick}
+        onClick={isCardClickable ? handleClick : undefined}
         style={getCardStyle()}
         data-card-surface="custom"
-        className="group relative w-full h-full overflow-hidden cursor-pointer shadow-lg hover:shadow-cyan-500/20 hover:scale-[1.02] active:scale-[0.96] transition-all duration-150 select-none"
+        className={`group relative w-full h-full overflow-hidden shadow-lg transition-all duration-150 select-none ${
+          isCardClickable
+            ? "cursor-pointer hover:shadow-cyan-500/20 hover:scale-[1.02] active:scale-[0.96]"
+            : "cursor-default"
+        }`}
       >
         {isImagePure && resolvedImageUrl ? (
           <img

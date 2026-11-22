@@ -12,6 +12,15 @@ import { MathText } from "@/components/MathText";
 import { ExamActionModal } from "@/components/ExamActionModal";
 import { ArrowLeft, Search, Play, Folder, FileText, X, Share2 } from "lucide-react";
 
+const NON_SEARCHABLE_TYPES = new Set([
+  "NOTE_SHEET",
+  "INFO_CARD",
+  "TEXT",
+  "SPACER",
+  "DIVIDER",
+  "IMAGE",
+]);
+
 export default function SearchPage() {
   const router = useRouter();
   const { isPro } = useAuth();
@@ -23,7 +32,7 @@ export default function SearchPage() {
 
   useEffect(() => {
     getAllSearchableItems().then((items) => {
-      setAllItems(items.filter((it) => !it.isHidden && it.type !== "NOTE_SHEET"));
+      setAllItems(items.filter((it) => !it.isHidden && !NON_SEARCHABLE_TYPES.has(it.type)));
     });
 
     if (typeof window !== "undefined") {

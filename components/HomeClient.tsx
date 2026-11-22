@@ -11,6 +11,7 @@ import { searchItemsWithRanking } from "@/lib/searchService";
 import { getAllSearchableItems } from "@/lib/layoutService";
 import { createFolderSlug, createNoteSlug } from "@/lib/slugUtils";
 import { getServerNow } from "@/lib/apiClient";
+import { getCurrentStreak } from "@/lib/streakService";
 import { useAuth } from "@/lib/useAuth";
 import {
   Home,
@@ -26,18 +27,38 @@ import {
   Folder,
   FileText,
   Gamepad2,
+  X,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
+const NON_SEARCHABLE_TYPES = new Set([
+  "NOTE_SHEET",
+  "INFO_CARD",
+  "TEXT",
+  "SPACER",
+  "DIVIDER",
+  "IMAGE",
+]);
+
 export const HomeClient: React.FC<{ initialItems: DashboardItem[] }> = ({ initialItems }) => {
   const router = useRouter();
-  const { isPro } = useAuth();
+  const { profile, isPro } = useAuth();
   const [search, setSearch] = useState("");
   const [searchableItems, setSearchableItems] = useState<DashboardItem[]>(initialItems);
   const [selectedExamItem, setSelectedExamItem] = useState<DashboardItem | null>(null);
+  const [greeting, setGreeting] = useState("স্বাগতম");
+  const [streak, setStreak] = useState(0);
 
   useEffect(() => {
+    const hr = new Date().getHours();
+    if (hr >= 5 && hr < 12) setGreeting("শুভ সকাল");
+    else if (hr >= 12 && hr < 17) setGreeting("শুভ অপরাহ্ন");
+    else if (hr >= 17 && hr < 21) setGreeting("শুভ সন্ধ্যা");
+    else setGreeting("স্বাগতম");
+
+    setStreak(getCurrentStreak());
+
     getAllSearchableItems()
       .then((deepItems) => {
         if (deepItems && deepItems.length > 0) {
@@ -48,7 +69,7 @@ export const HomeClient: React.FC<{ initialItems: DashboardItem[] }> = ({ initia
   }, []);
 
   const visibleSearchPool = searchableItems.filter((it) => {
-    if (it.isHidden || it.type === "NOTE_SHEET") return false;
+    if (it.isHidden || NON_SEARCHABLE_TYPES.has(it.type)) return false;
     if (it.visibilityCondition === "PREMIUM_ONLY" && !isPro) return false;
     if (it.visibilityCondition === "FREE_ONLY" && isPro) return false;
     return true;
@@ -178,15 +199,77 @@ export const HomeClient: React.FC<{ initialItems: DashboardItem[] }> = ({ initia
         </aside>
 
         <main className="w-full lg:max-w-[750px] min-h-screen flex flex-col pb-24 lg:pb-8">
-          <div className="relative mb-6">
-            <Search size={18} className="absolute left-4 top-3.5 text-gray-400" />
-            <input
-              type="text"
-              placeholder="যেকোনো পরীক্ষা বা অধ্যায় খুঁজুন..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full bg-[#121218] border border-white/10 rounded-2xl pl-11 pr-4 py-3 text-sm focus:border-cyan-500 outline-none text-white shadow-xl transition"
-            />
+          <div className="bg-[#121218] border border-white/10 rounded-3xl p-4 sm:p-5 mb-5 shadow-xl relative overflow-hidden">
+            <div className="flex items-center justify-between gap-3 mb-3.5">
+              <Link href={profile ? "/profile" : "/login"} className="flex items-center gap-3 min-w-0 group">
+                <div
+                  className={`w-11 h-11 rounded-2xl p-[2px] flex-shrink-0 ${
+                    isPro
+                      ? "bg-gradient-to-tr from-amber-400 to-orange-500"
+                      : "bg-gradient-to-tr from-cyan-400 to-blue-500"
+                  }`}
+                >
+                  {profile?.photoUrl ? (
+                    <img
+                      src={profile.photoUrl}
+                      alt={profile.name}
+                      className="w-full h-full rounded-[14px] object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full rounded-[14px] bg-[#161620] flex items-center justify-center font-black text-base text-cyan-400">
+                      {profile?.name ? profile.name[0].toUpperCase() : "H"}
+                    </div>
+                  )}
+                </div>
+
+                <div className="min-w-0">
+                  <span className="text-[11px] font-semibold text-gray-400 block leading-tight">
+                    {greeting} 👋
+                  </span>
+                  <h2 className="text-base sm:text-lg font-black text-white truncate group-hover:text-cyan-400 transition">
+                    {profile?.name || "শিক্ষার্থী"}
+                  </h2>
+                </div>
+              </Link>
+
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {streak > 0 && (
+                  <span className="flex items-center gap-1 text-[11px] font-black bg-orange-500/15 border border-orange-500/35 text-orange-400 px-2.5 py-1.5 rounded-xl">
+                    <Flame size={13} className="fill-orange-400" /> {streak}d
+                  </span>
+                )}
+                <Link
+                  href="/mistakes"
+                  className="hidden sm:flex items-center gap-1 text-[11px] font-bold bg-white/5 hover:bg-white/10 border border-white/10 text-purple-300 px-3 py-1.5 rounded-xl transition"
+                >
+                  <BookOpen size={13} /> মিসটেক
+                </Link>
+              </div>
+            </div>
+
+            <div className="relative group">
+              <Search
+                size={17}
+                className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-cyan-400 transition"
+              />
+              <input
+                type="text"
+                placeholder="যেকোনো পরীক্ষা, অধ্যায় বা PDF নোট খুঁজুন..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full bg-white/5 border border-white/10 focus:border-cyan-500/70 rounded-2xl pl-11 pr-10 py-3 text-xs sm:text-sm outline-none text-white placeholder:text-gray-500 shadow-inner transition"
+              />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => setSearch("")}
+                  aria-label="Clear search"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition"
+                >
+                  <X size={15} />
+                </button>
+              )}
+            </div>
           </div>
 
           {search.trim() ? (
