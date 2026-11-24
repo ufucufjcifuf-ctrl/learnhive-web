@@ -1,13 +1,26 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { Suspense, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { signUpWithEmail, signInWithGoogle } from "@/lib/authService";
 import { ArrowLeft, User as UserIcon, Mail, Lock, Eye, EyeOff, UserPlus, AlertCircle, AtSign } from "lucide-react";
 
-export default function SignUpPage() {
+function getSafeRedirectPath(raw: string | null): string {
+  if (!raw) return "/profile";
+  const trimmed = raw.trim();
+  if (trimmed.startsWith("/") && !trimmed.startsWith("//")) {
+    return trimmed;
+  }
+  return "/profile";
+}
+
+function SignUpFormContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const rawRedirect = searchParams.get("redirect");
+  const redirectTarget = getSafeRedirectPath(rawRedirect);
+
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
@@ -46,7 +59,7 @@ export default function SignUpPage() {
     if (error) {
       setErrorMsg(error);
     } else if (user) {
-      router.push("/profile");
+      router.push(redirectTarget);
     }
   };
 
@@ -58,9 +71,13 @@ export default function SignUpPage() {
     if (error) {
       setErrorMsg(error);
     } else if (user) {
-      router.push("/profile");
+      router.push(redirectTarget);
     }
   };
+
+  const loginHref = rawRedirect
+    ? `/login?redirect=${encodeURIComponent(redirectTarget)}`
+    : "/login";
 
   return (
     <div className="min-h-screen bg-[#0A0A0E] text-white flex flex-col items-center justify-center p-4 md:p-6 selection:bg-cyan-500 selection:text-black">
@@ -217,11 +234,25 @@ export default function SignUpPage() {
 
         <p className="text-center text-xs text-gray-400 mt-6">
           ইতিমধ্যে অ্যাকাউন্ট আছে?{" "}
-          <Link href="/login" className="text-cyan-400 font-extrabold hover:underline">
+          <Link href={loginHref} className="text-cyan-400 font-extrabold hover:underline">
             লগইন করুন
           </Link>
         </p>
       </div>
     </div>
+  );
+}
+
+export default function SignUpPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-[#0A0A0E] text-white flex items-center justify-center text-xs">
+          লোড হচ্ছে...
+        </div>
+      }
+    >
+      <SignUpFormContent />
+    </Suspense>
   );
 }

@@ -179,13 +179,46 @@ export interface PremiumPackage {
   price: number;
   features: string;
   isPopular?: boolean;
+  isHidden?: boolean;
 }
 
 export interface PremiumConfig {
   instructions: string;
   whatsappNumber: string;
   facebookLink: string;
+  bkashNumber?: string;
+  bkashNote?: string;
+  nagadNumber?: string;
+  nagadNote?: string;
+  rocketNumber?: string;
+  rocketNote?: string;
+  buyRules?: string;
   packages: PremiumPackage[];
+}
+
+export type PaymentMethod = "BKASH" | "NAGAD" | "ROCKET";
+export type PremiumRequestStatus = "PENDING" | "APPROVED" | "REJECTED";
+
+export interface PremiumRequestItem {
+  id: string;
+  userId: string;
+  userName: string;
+  userEmail: string;
+  userUsername: string;
+  packageId: string;
+  packageTitle: string;
+  packagePrice: number;
+  durationDays: number;
+  paymentMethod: PaymentMethod;
+  senderPhoneLast: string;
+  transactionId: string;
+  hasScreenshot: boolean;
+  screenshotPath: string | null;
+  status: PremiumRequestStatus;
+  adminNote: string;
+  reviewedBy?: string;
+  createdAt: number;
+  reviewedAt: number;
 }
 
 export interface LeaderboardEntry {
