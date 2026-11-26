@@ -18,6 +18,7 @@ export interface PdfPageCanvasProps {
   currentVisiblePage: number;
   containerWidth: number;
   zoom: number;
+  settledZoom: number;
   theme: WebTheme;
   dimmerAlpha: number;
   watermarkText: string;
@@ -29,10 +30,11 @@ export interface PdfPageCanvasProps {
   noteCount: number;
   searchQuery: string;
   isActiveSearchPage: boolean;
-  onBecomeVisible: (pageNumber: number) => void;
   onOpenNotesForPage: (pageIndex: number) => void;
   onCommitStrokes: (pageIndex: number, prev: WebDrawingStroke[], next: WebDrawingStroke[]) => void;
 }
+
+const MAX_CANVAS_PIXELS = 5_500_000;
 
 export const PdfPageCanvas: React.FC<PdfPageCanvasProps> = React.memo(function PdfPageCanvas({
   pdfDoc,
@@ -40,6 +42,7 @@ export const PdfPageCanvas: React.FC<PdfPageCanvasProps> = React.memo(function P
   currentVisiblePage,
   containerWidth,
   zoom,
+  settledZoom,
   theme,
   dimmerAlpha,
   watermarkText,
@@ -51,7 +54,6 @@ export const PdfPageCanvas: React.FC<PdfPageCanvasProps> = React.memo(function P
   noteCount,
   searchQuery,
   isActiveSearchPage,
-  onBecomeVisible,
   onOpenNotesForPage,
   onCommitStrokes,
 }) {
@@ -63,10 +65,16 @@ export const PdfPageCanvas: React.FC<PdfPageCanvasProps> = React.memo(function P
   const [aspectRatio, setAspectRatio] = useState<number>(0.707);
   const [rendered, setRendered] = useState(false);
 
+  const aspectRatioRef = useRef<number>(0.707);
+  const renderedRef = useRef<boolean>(false);
+  const lastRenderedKeyRef = useRef<string>("");
+  const currentVisiblePageRef = useRef<number>(currentVisiblePage);
+  currentVisiblePageRef.current = currentVisiblePage;
+
   const [activePoints, setActivePoints] = useState<WebDrawingPoint[]>([]);
   const [workingStrokes, setWorkingStrokes] = useState<WebDrawingStroke[]>(strokes);
   const activePointerIdRef = useRef<number | null>(null);
-  const multiTouchCountRef = useRef<number>(0);
+  const activePointersRef = useRef<Set<number>>(new Set());
   const dragPointsRef = useRef<WebDrawingPoint[]>([]);
   const workingStrokesRef = useRef<WebDrawingStroke[]>(strokes);
   const initialStrokesRef = useRef<WebDrawingStroke[]>(strokes);
@@ -80,31 +88,46 @@ export const PdfPageCanvas: React.FC<PdfPageCanvasProps> = React.memo(function P
   }, [strokes]);
 
   useEffect(() => {
+    if (!isDrawingMode) {
+      activePointersRef.current.clear();
+      activePointerIdRef.current = null;
+      return;
+    }
+
+    const onGlobalPointerEnd = (e: PointerEvent) => {
+      activePointersRef.current.delete(e.pointerId);
+    };
+
+    window.addEventListener("pointerup", onGlobalPointerEnd);
+    window.addEventListener("pointercancel", onGlobalPointerEnd);
+    return () => {
+      window.removeEventListener("pointerup", onGlobalPointerEnd);
+      window.removeEventListener("pointercancel", onGlobalPointerEnd);
+    };
+  }, [isDrawingMode]);
+
+  useEffect(() => {
     const el = wrapperRef.current;
     if (!el) return;
 
     const observer = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
-          if (entry.isIntersecting && entry.intersectionRatio >= 0.35) {
-            onBecomeVisible(pageNumber);
-          }
-          if (entry.isIntersecting) {
-            setInWindow(true);
-          }
+          setInWindow(entry.isIntersecting);
         }
       },
-      { rootMargin: "700px 0px", threshold: [0.05, 0.35, 0.7] }
+      { rootMargin: "550px 0px", threshold: 0.01 }
     );
 
     observer.observe(el);
     return () => observer.disconnect();
-  }, [pageNumber, onBecomeVisible]);
+  }, [pageNumber]);
 
-  const shouldHoldCanvas = inWindow || Math.abs(pageNumber - currentVisiblePage) <= 2;
+  const preloadRadius = settledZoom > 1.6 ? 1 : 2;
+  const shouldHoldCanvas = inWindow || Math.abs(pageNumber - currentVisiblePage) <= preloadRadius;
 
   useEffect(() => {
-    const canvas = canvasRef.current;
+    const visibleCanvas = canvasRef.current;
     if (!shouldHoldCanvas) {
       if (renderTaskRef.current) {
         try {
@@ -112,48 +135,74 @@ export const PdfPageCanvas: React.FC<PdfPageCanvasProps> = React.memo(function P
         } catch {}
         renderTaskRef.current = null;
       }
-      if (canvas && (canvas.width > 0 || canvas.height > 0)) {
-        canvas.width = 0;
-        canvas.height = 0;
+      lastRenderedKeyRef.current = "";
+      renderedRef.current = false;
+      if (visibleCanvas && (visibleCanvas.width > 0 || visibleCanvas.height > 0)) {
+        visibleCanvas.width = 0;
+        visibleCanvas.height = 0;
         setRendered(false);
       }
       return;
     }
 
+    const renderKey = `${containerWidth}_${settledZoom}`;
+    if (renderedRef.current && lastRenderedKeyRef.current === renderKey) {
+      return;
+    }
+
     let cancelled = false;
+    let offscreenCanvas: HTMLCanvasElement | null = null;
+
+    const distFromCurrent = Math.abs(pageNumber - currentVisiblePageRef.current);
+    const priorityDelayMs = distFromCurrent === 0 ? 0 : distFromCurrent === 1 ? 60 : 130;
 
     async function renderPage() {
       let page: PDFPageProxy | null = null;
       try {
+        if (priorityDelayMs > 0) {
+          await new Promise<void>((resolve) => {
+            setTimeout(resolve, priorityDelayMs);
+          });
+          if (cancelled) return;
+        }
+
         page = await pdfDoc.getPage(pageNumber);
         if (cancelled) return;
 
         const vp1 = page.getViewport({ scale: 1 });
         const ratio = vp1.height > 0 ? vp1.width / vp1.height : 0.707;
-        setAspectRatio(ratio);
+        if (Math.abs(ratio - aspectRatioRef.current) > 0.002) {
+          aspectRatioRef.current = ratio;
+          setAspectRatio(ratio);
+        }
 
-        const targetCanvas = canvasRef.current;
-        if (!targetCanvas) return;
+        const horizontalPad = containerWidth >= 640 ? 32 : 16;
+        const baseCssWidth = Math.max(260, containerWidth - horizontalPad);
+        const rawDpr = window.devicePixelRatio || 1;
+        const cappedDpr = Math.min(
+          rawDpr,
+          settledZoom > 2.0 ? 1.35 : settledZoom > 1.4 ? 1.6 : 2.0
+        );
 
-        const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
-        const fitScale = Math.max(0.5, (containerWidth - 16) / Math.max(1, vp1.width));
-        let renderScale = Math.min(fitScale * zoom * dpr, fitScale * 3.0);
+        const fitScale = Math.max(0.5, baseCssWidth / Math.max(1, vp1.width));
+        let renderScale = Math.min(fitScale * settledZoom * cappedDpr, fitScale * 3.2);
 
         let pixelW = Math.floor(vp1.width * renderScale);
         let pixelH = Math.floor(vp1.height * renderScale);
         const totalPixels = pixelW * pixelH;
-        if (totalPixels > 12_000_000) {
-          const factor = Math.sqrt(12_000_000 / totalPixels);
+        if (totalPixels > MAX_CANVAS_PIXELS) {
+          const factor = Math.sqrt(MAX_CANVAS_PIXELS / totalPixels);
           renderScale *= factor;
           pixelW = Math.floor(vp1.width * renderScale);
           pixelH = Math.floor(vp1.height * renderScale);
         }
 
-        targetCanvas.width = Math.max(1, pixelW);
-        targetCanvas.height = Math.max(1, pixelH);
+        offscreenCanvas = document.createElement("canvas");
+        offscreenCanvas.width = Math.max(1, pixelW);
+        offscreenCanvas.height = Math.max(1, pixelH);
 
-        const ctx = targetCanvas.getContext("2d");
-        if (!ctx) return;
+        const offCtx = offscreenCanvas.getContext("2d");
+        if (!offCtx) return;
 
         const renderViewport = page.getViewport({ scale: renderScale });
         if (renderTaskRef.current) {
@@ -163,18 +212,36 @@ export const PdfPageCanvas: React.FC<PdfPageCanvasProps> = React.memo(function P
         }
 
         const task = page.render({
-          canvas: targetCanvas,
-          canvasContext: ctx,
+          canvas: offscreenCanvas,
+          canvasContext: offCtx,
           viewport: renderViewport,
         } as Parameters<typeof page.render>[0]);
         renderTaskRef.current = task;
 
         await task.promise;
-        if (!cancelled) setRendered(true);
+        if (cancelled) return;
+
+        const targetCanvas = canvasRef.current;
+        if (targetCanvas && offscreenCanvas) {
+          targetCanvas.width = offscreenCanvas.width;
+          targetCanvas.height = offscreenCanvas.height;
+          const targetCtx = targetCanvas.getContext("2d");
+          if (targetCtx) {
+            targetCtx.drawImage(offscreenCanvas, 0, 0);
+          }
+          lastRenderedKeyRef.current = renderKey;
+          renderedRef.current = true;
+          setRendered(true);
+        }
       } catch {
         // Ignore transient cancellation noise
       } finally {
         renderTaskRef.current = null;
+        if (offscreenCanvas) {
+          offscreenCanvas.width = 0;
+          offscreenCanvas.height = 0;
+          offscreenCanvas = null;
+        }
       }
     }
 
@@ -187,7 +254,7 @@ export const PdfPageCanvas: React.FC<PdfPageCanvasProps> = React.memo(function P
         } catch {}
       }
     };
-  }, [pdfDoc, pageNumber, shouldHoldCanvas, containerWidth, zoom]);
+  }, [pdfDoc, pageNumber, shouldHoldCanvas, containerWidth, settledZoom]);
 
   useEffect(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -278,8 +345,14 @@ export const PdfPageCanvas: React.FC<PdfPageCanvasProps> = React.memo(function P
 
   const handleSvgPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
     if (!isDrawingMode) return;
-    multiTouchCountRef.current += 1;
-    if (multiTouchCountRef.current >= 2) {
+    activePointersRef.current.add(e.pointerId);
+
+    if (activePointersRef.current.size >= 2) {
+      if (activePointerIdRef.current !== null) {
+        try {
+          e.currentTarget.releasePointerCapture(activePointerIdRef.current);
+        } catch {}
+      }
       activePointerIdRef.current = null;
       dragPointsRef.current = [];
       setActivePoints([]);
@@ -289,7 +362,9 @@ export const PdfPageCanvas: React.FC<PdfPageCanvasProps> = React.memo(function P
     }
 
     e.stopPropagation();
-    e.currentTarget.setPointerCapture(e.pointerId);
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {}
     activePointerIdRef.current = e.pointerId;
     initialStrokesRef.current = workingStrokesRef.current;
     eraserChangedRef.current = false;
@@ -312,7 +387,7 @@ export const PdfPageCanvas: React.FC<PdfPageCanvasProps> = React.memo(function P
 
   const handleSvgPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
     if (!isDrawingMode || activePointerIdRef.current !== e.pointerId) return;
-    if (multiTouchCountRef.current >= 2) return;
+    if (activePointersRef.current.size >= 2) return;
 
     const pt = getNormalizedPoint(e);
     if (drawTool === "ERASER") {
@@ -335,7 +410,7 @@ export const PdfPageCanvas: React.FC<PdfPageCanvasProps> = React.memo(function P
   };
 
   const handleSvgPointerUp = (e: React.PointerEvent<SVGSVGElement>) => {
-    multiTouchCountRef.current = Math.max(0, multiTouchCountRef.current - 1);
+    activePointersRef.current.delete(e.pointerId);
     if (activePointerIdRef.current !== e.pointerId) return;
     activePointerIdRef.current = null;
 
@@ -366,7 +441,8 @@ export const PdfPageCanvas: React.FC<PdfPageCanvasProps> = React.memo(function P
     setActivePoints([]);
   };
 
-  const cssWidthPx = Math.max(260, (containerWidth - 16) * zoom);
+  const horizontalPad = containerWidth >= 640 ? 32 : 16;
+  const cssWidthPx = Math.max(260, (containerWidth - horizontalPad) * zoom);
   const cssHeightPx = cssWidthPx / Math.max(0.25, aspectRatio);
 
   const canvasFilter =

@@ -14,30 +14,54 @@ export default function PrivacyPage() {
   const [showConfirm, setShowConfirm] = useState(false);
 
   const handleDeleteAccount = async () => {
-    const user = auth.currentUser;
-    if (!user) {
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
       alert("অ্যাকাউন্ট ডিলিট করতে প্রথমে লগইন অবস্থায় থাকতে হবে।");
       return;
     }
 
     setDeleting(true);
     try {
-      // Delete user profile, bookmarks, mistakes, exam results & analytics from Cloudflare D1 first (while ID token is still valid)
-      await apiFetch("/api/user", {
-        method: "DELETE",
-        requireAuth: true,
-      });
+      // 1. Capture fresh Firebase ID token BEFORE deleting Firebase Auth user
+      const freshToken = await currentUser.getIdToken(true);
+      if (!freshToken) {
+        alert("ভেরিফিকেশন টোকেন পাওয়া যায়নি। আবার চেষ্টা করুন।");
+        return;
+      }
 
-      // Then delete Firebase Auth user
-      await deleteUser(user);
-      clearCachedUserProfile();
-      localStorage.removeItem("mcqhub_exam_history");
-      localStorage.removeItem("mcqhub_saved_questions_detail");
-      localStorage.removeItem("mcqhub_mistake_bank");
+      // 2. Delete Firebase Auth first so auth/requires-recent-login never wipes server data prematurely
+      await deleteUser(currentUser);
+
+      // 3. Clear local session data once Firebase Auth user is deleted, and delete D1 + Analytics via freshToken
+      try {
+        await apiFetch("/api/user", {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${freshToken}`,
+          },
+        });
+      } finally {
+        clearCachedUserProfile();
+        if (typeof window !== "undefined") {
+          localStorage.removeItem("mcqhub_exam_history");
+          localStorage.removeItem("mcqhub_saved_questions_detail");
+          localStorage.removeItem("mcqhub_mistake_bank");
+        }
+      }
+
       alert("আপনার অ্যাকাউন্ট ও সমস্ত ডেটা স্থায়ীভাবে মুছে ফেলা হয়েছে।");
       router.push("/");
-    } catch {
-      alert("নিরাপত্তার স্বার্থে অ্যাকাউন্ট মুছে ফেলার আগে অনুগ্রহ করে লগআউট করে পুনরায় একবার লগইন করুন।");
+    } catch (err: unknown) {
+      const code = (err as { code?: string })?.code;
+      if (code === "auth/requires-recent-login") {
+        alert("নিরাপত্তার স্বার্থে অ্যাকাউন্ট মুছে ফেলার আগে অনুগ্রহ করে লগআউট করে পুনরায় একবার লগইন করুন।");
+      } else {
+        alert(
+          err instanceof Error
+            ? err.message
+            : "অ্যাকাউন্ট মুছে ফেলতে সমস্যা হয়েছে। অনুগ্রহ করে আবার চেষ্টা করুন।"
+        );
+      }
     } finally {
       setDeleting(false);
       setShowConfirm(false);

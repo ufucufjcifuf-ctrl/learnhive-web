@@ -9,6 +9,7 @@ import { ExamActionModal } from "@/components/ExamActionModal";
 import { getSmartImageUrl, syncAssetImages } from "@/lib/imageService";
 import { createFolderSlug, createExamSlug, createNoteSlug } from "@/lib/slugUtils";
 import { useAuth } from "@/lib/useAuth";
+import { useTheme } from "@/components/ThemeProvider";
 import { getServerNow } from "@/lib/apiClient";
 
 function resolveShapeStyles(shapeType: string | undefined, radius: number): React.CSSProperties {
@@ -56,9 +57,44 @@ function isTransparentColor(c?: string): boolean {
   return upper === "TRANSPARENT" || upper === "#TRANSPARENT" || upper === "#00000000";
 }
 
+function isWhiteColor(c?: string): boolean {
+  if (!c) return false;
+  const clean = c.trim().toUpperCase();
+  return (
+    clean === "#FFFFFF" ||
+    clean === "#FFF" ||
+    clean === "#FFFFFFFF" ||
+    clean === "WHITE" ||
+    clean === "RGB(255, 255, 255)" ||
+    clean === "RGB(255,255,255)"
+  );
+}
+
+function isDarkHexColor(hex?: string): boolean {
+  if (!hex) return false;
+  let clean = hex.trim().replace(/^#/, "");
+  if (clean.length === 8) {
+    // AARRGGBB -> strip alpha
+    clean = clean.slice(2);
+  } else if (clean.length === 3) {
+    clean = clean
+      .split("")
+      .map((ch) => ch + ch)
+      .join("");
+  }
+  if (clean.length !== 6) return false;
+  const r = parseInt(clean.slice(0, 2), 16);
+  const g = parseInt(clean.slice(2, 4), 16);
+  const b = parseInt(clean.slice(4, 6), 16);
+  if ([r, g, b].some((v) => Number.isNaN(v))) return false;
+  const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+  return luminance < 160;
+}
+
 export const DynamicCard: React.FC<{ item: DashboardItem }> = ({ item }) => {
   const router = useRouter();
   const { isPro } = useAuth();
+  const { resolvedTheme } = useTheme();
   const [showModal, setShowModal] = useState(false);
   const [resolvedImageUrl, setResolvedImageUrl] = useState<string | null>(() =>
     getSmartImageUrl(item.iconUrl)
@@ -246,7 +282,35 @@ export const DynamicCard: React.FC<{ item: DashboardItem }> = ({ item }) => {
   }
 
   if (item.type === "TEXT") {
-    const tColor = textConf?.textColor && !isTransparentColor(textConf.textColor) ? textConf.textColor : "#FFFFFF";
+    const validBgColors = (bgConfig?.colors || []).filter((c) => !isTransparentColor(c));
+    const hasCustomBg = Boolean(
+      bgConfig && bgConfig.type !== "TRANSPARENT" && validBgColors.length > 0
+    );
+    const hasDarkCustomBg = hasCustomBg && isDarkHexColor(validBgColors[0]);
+
+    let customBgCss: string | undefined;
+    if (hasCustomBg && bgConfig) {
+      if (bgConfig.type === "SOLID" || validBgColors.length === 1) {
+        customBgCss = validBgColors[0];
+      } else if (bgConfig.type === "RADIAL_GRADIENT") {
+        customBgCss = `radial-gradient(circle, ${validBgColors.join(", ")})`;
+      } else if (bgConfig.type === "SWEEP_GRADIENT") {
+        customBgCss = `conic-gradient(${validBgColors.join(", ")})`;
+      } else {
+        const angle = bgConfig.gradientAngle ?? 45;
+        customBgCss = `linear-gradient(${angle}deg, ${validBgColors.join(", ")})`;
+      }
+    }
+
+    const rawTextColor = textConf?.textColor?.trim();
+    const isDefaultOrWhite = !rawTextColor || isTransparentColor(rawTextColor) || isWhiteColor(rawTextColor);
+
+    const tColor = isDefaultOrWhite
+      ? resolvedTheme === "light" && !hasDarkCustomBg
+        ? "#0F172A"
+        : "#FFFFFF"
+      : rawTextColor;
+
     const tAlign =
       textConf?.textAlign === "START" ? "text-left" : textConf?.textAlign === "END" ? "text-right" : "text-center";
     const tWeight = textConf?.fontWeight === "NORMAL" ? "font-normal" : "font-bold";
@@ -256,6 +320,15 @@ export const DynamicCard: React.FC<{ item: DashboardItem }> = ({ item }) => {
     return (
       <div
         onClick={isTextClickable ? handleClick : undefined}
+        data-card-surface={hasDarkCustomBg ? "custom" : undefined}
+        style={
+          customBgCss
+            ? {
+                background: customBgCss,
+                borderRadius: `${Math.max(0, design?.cornerRadius ?? uiStyle?.cornerRadius ?? 12)}px`,
+              }
+            : undefined
+        }
         className={`w-full h-full flex items-center px-3 ${
           textConf?.textAlign === "START"
             ? "justify-start"
@@ -397,7 +470,7 @@ export const DynamicCard: React.FC<{ item: DashboardItem }> = ({ item }) => {
           const angle = bgConfig.gradientAngle ?? 45;
           background = `linear-gradient(${angle}deg, ${validColors.join(", ")})`;
         } else if (bgConfig.type === "RADIAL_GRADIENT") {
-          background = `radial-gradient(circle, ${validColors.join(", ")})`;
+          background = `radial-gradient(circle, ${validBgFallback(validColors)})`;
         } else if (bgConfig.type === "SWEEP_GRADIENT") {
           background = `conic-gradient(${validColors.join(", ")})`;
         }
@@ -591,3 +664,7 @@ export const DynamicCard: React.FC<{ item: DashboardItem }> = ({ item }) => {
     </>
   );
 };
+
+function validBgFallback(colors: string[]): string {
+  return colors.join(", ");
+}

@@ -15,7 +15,11 @@ export const BottomNavBar: React.FC = () => {
     pathname.startsWith("/video/") ||
     pathname.startsWith("/adaptive/") ||
     pathname.startsWith("/battle/") ||
-    pathname.startsWith("/live/")
+    pathname.startsWith("/live/") ||
+    pathname === "/note" ||
+    pathname.startsWith("/note/") ||
+    pathname === "/page" ||
+    pathname.startsWith("/page/")
   ) {
     return null;
   }
